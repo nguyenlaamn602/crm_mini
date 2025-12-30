@@ -12,24 +12,21 @@ class PancakeService:
         self.user_token = os.getenv("PANCAKE_USER_TOKEN")
 
     def fetch_pages(self):
-        """Lấy danh sách trang theo cấu trúc phân loại của Pancake"""
+        """Lấy danh sách các Fanpage/OA đang hoạt động"""
         resp = requests.get(f"{self.api_v1}/pages", params={"access_token": self.user_token})
         if resp.status_code == 200:
-            # Khôi phục logic categorized của bạn để lấy đủ các trang activated và inactivated
             cat = resp.json().get("categorized", {})
             return cat.get("activated", []) + cat.get("inactivated", [])
         return []
 
     def get_token(self, page_id):
-        """Tạo Page Access Token"""
+        """Tạo Token truy cập cho từng trang"""
         url = f"{self.api_v1}/pages/{page_id}/generate_page_access_token"
         resp = requests.post(url, params={"page_id": page_id, "access_token": self.user_token})
-        if resp.status_code == 200:
-            return resp.json().get("page_access_token")
-        return None
+        return resp.json().get("page_access_token") if resp.status_code == 200 else None
 
     def get_all_leads(self, page_id, p_token):
-        """Gom Lead và chuẩn hóa trạng thái từ Tag Pancake"""
+        """Lấy khách hàng và ID hội thoại tương ứng"""
         tag_map = {}
         tag_resp = requests.get(f"{self.public_v1}/pages/{page_id}/tags", params={"page_access_token": p_token})
         if tag_resp.status_code == 200:
@@ -42,9 +39,6 @@ class PancakeService:
             for conv in resp.json().get("conversations", []):
                 cust_data = conv.get("customers", [])
                 if not cust_data: continue
-                
-                raw_phones = conv.get("recent_phone_numbers", [])
-                clean_phone = raw_phones[0].get("phone_number", "N/A") if raw_phones and isinstance(raw_phones[0], dict) else "N/A"
                 
                 sector, status = None, "Khách Mới"
                 for item in conv.get("tags", []):
@@ -61,13 +55,13 @@ class PancakeService:
                         if raw_status == "khách mới": status = "Khách Mới"
                         elif raw_status == "khách chốt": status = "Khách hàng tiềm năng"
                         elif raw_status == "khách vip": status = "Khách Vip"
-                        elif raw_status == "khách ko đi": status = "Khách không đi"
 
                 if sector: 
                     leads.append({
                         "name": cust_data[0].get("name", "Khách hàng"),
                         "psid": cust_data[0].get("id"),
-                        "phone": clean_phone,
+                        "conversation_id": conv.get("id"), # Lấy ID hội thoại chuẩn
+                        "phone": conv.get("recent_phone_numbers", [{}])[0].get("phone_number", "N/A"),
                         "sector": sector,
                         "status": status
                     })

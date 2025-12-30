@@ -183,7 +183,6 @@
     </style>
 </head>
 <body>
-    <!-- SIDEBAR -->
     <div class="sidebar" id="sidebar">
         <button class="toggle-btn" id="sidebar-toggle" title="Toggle Menu">
             <i class="bi bi-chevron-left" id="toggle-icon"></i>
@@ -222,10 +221,15 @@
                 <span class="nav-text">Task Management</span>
             </a>
 
-            <!-- ADMIN ONLY SECTION -->
+            {% if current_user.role == 'admin' %}
+            <div class="section-title">Administration</div>
+            <a href="/admin/users" class="nav-link {% if request.path == '/admin/users' %}active{% endif %}" title="User Management">
+                <i class="bi bi-people-fill"></i> 
+                <span class="nav-text">User Management</span>
+            </a>
+            {% endif %}
         </div>
 
-        <!-- USER INFO -->
         {% if current_user.is_authenticated %}
         <div class="user-section">
             <div class="user-profile-brief">
@@ -243,9 +247,7 @@
         {% endif %}
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="main-content" id="main-content">
-        <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             {% for category, message in messages %}
@@ -279,7 +281,6 @@
             }
         }
 
-        // Khởi tạo trạng thái từ LocalStorage
         const savedState = localStorage.getItem('sidebar-collapsed') === 'true';
         updateUI(savedState);
 

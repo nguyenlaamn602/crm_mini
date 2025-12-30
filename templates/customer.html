@@ -3,28 +3,29 @@
 
 {% block content %}
 <style>
-    /* Inline Editing Styling */
-    .inline-edit { background: transparent; border: 1px solid transparent; padding: 4px 8px; border-radius: 8px; transition: all 0.2s; width: 100%; color: inherit; font-weight: inherit; }
+    /* Inline Editing Styling - HỖ TRỢ FLEXIBLE SIZE */
+    .inline-edit { background: transparent; border: 1px solid transparent; padding: 4px 8px; border-radius: 8px; transition: all 0.2s; width: auto; min-width: 100px; color: inherit; font-weight: inherit; display: inline-block; }
     .inline-edit:hover { background: rgba(0,0,0,0.03); border-color: #e2e8f0; }
     .inline-edit:focus { background: #fff; border-color: #4361ee; outline: none; box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1); }
     .save-status { font-size: 0.75rem; display: none; }
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .spinner-save { animation: spin 1s linear infinite; display: inline-block; }
     
-    /* Activity Table Button Styling */
     .activity-header-btn { border-radius: 10px; padding: 8px 18px; font-weight: 600; font-size: 0.85rem; }
 </style>
 
 <div class="container-fluid p-0">
-    <!-- Header Area -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="d-flex align-items-center gap-3">
             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-4" style="width: 55px; height: 55px;">
                 {{ lead.full_name[0].upper() }}
             </div>
-            <div>
+            <div class="d-flex flex-column">
                 <input type="text" class="inline-edit fw-bold fs-3 text-dark mb-0" 
-                       value="{{ lead.full_name }}" data-field="full_name" onblur="autoSave(this)">
+                       value="{{ lead.full_name }}" data-field="full_name" 
+                       onblur="autoSave(this)" 
+                       oninput="this.style.width = ((this.value.length + 1) * 18) + 'px'"
+                       id="name-input">
                 <div class="d-flex align-items-center gap-2">
                     <small class="text-muted">ID: {{ lead.psid }}</small>
                     <span id="save-indicator" class="save-status text-success">
@@ -43,14 +44,13 @@
     </div>
 
     <div class="row g-4">
-        <!-- Profile Sidebar -->
         <div class="col-md-4">
             <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
                 <h6 class="text-uppercase text-muted small fw-bold mb-4">Customer Details</h6>
                 
                 <div class="mb-4">
                     <label class="text-muted small d-block mb-1">PHONE / USERNAME</label>
-                    <input type="text" class="inline-edit fw-bold text-primary p-0 fs-5" 
+                    <input type="text" class="inline-edit fw-bold text-primary p-0 fs-5" style="width: 100%;"
                            value="{{ lead.phone_number if lead.phone_number != 'N/A' else '' }}" 
                            placeholder="Enter phone..." data-field="phone_number" onblur="autoSave(this)">
                 </div>
@@ -74,14 +74,26 @@
                     </select>
                 </div>
 
-                <div class="pt-3 border-top">
+                <div class="pt-3 border-top mb-3">
                     <label class="text-muted small d-block">SOURCE</label>
                     <span class="badge bg-secondary-subtle text-secondary border px-2">{{ lead.source_platform }}</span>
                 </div>
+
+                {% if lead.source_platform and 'Pancake' in lead.source_platform %}
+                <div class="d-grid mt-2">
+                    {% if lead.page_username and lead.conversation_id %}
+                    <a href="https://pancake.vn/{{ lead.page_username }}?c_id={{ lead.conversation_id }}" 
+                       target="_blank" class="btn btn-success rounded-pill fw-bold shadow-sm py-2">
+                        <i class="bi bi-chat-dots-fill me-2"></i>Open in Pancake
+                    </a>
+                    {% else %}
+                    <button class="btn btn-outline-secondary rounded-pill disabled py-2">Waiting for Auto-sync...</button>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
         
-        <!-- Activity & Notes Table (Main Content) -->
         <div class="col-md-8">
             <div class="card border-0 shadow-sm rounded-4 overflow-hidden h-100">
                 <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
@@ -111,34 +123,22 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <!-- Tasks List -->
                                 {% for task in tasks %}
                                 <tr>
-                                    <td class="ps-4">
-                                        <span class="badge bg-primary-subtle text-primary rounded-pill">Task</span>
-                                    </td>
-                                    <td>
-                                        <div class="fw-semibold text-dark">{{ task.todo_content }}</div>
-                                    </td>
+                                    <td class="ps-4"><span class="badge bg-primary-subtle text-primary rounded-pill">Task</span></td>
+                                    <td><div class="fw-semibold text-dark">{{ task.todo_content }}</div></td>
                                     <td class="small">{{ task.assignee }}</td>
                                     <td class="small text-muted">{{ task.created_at.strftime('%d/%m/%y %H:%M') }}</td>
                                     <td class="pe-4 text-end">
-                                        <span class="badge {% if task.status == 'Done' %}bg-success{% else %}bg-warning{% endif %} rounded-pill">
-                                            {{ task.status }}
-                                        </span>
+                                        <span class="badge {% if task.status == 'Done' %}bg-success{% else %}bg-warning{% endif %} rounded-pill">{{ task.status }}</span>
                                     </td>
                                 </tr>
                                 {% endfor %}
 
-                                <!-- Notes List -->
                                 {% for note in notes %}
                                 <tr>
-                                    <td class="ps-4">
-                                        <span class="badge bg-info-subtle text-info rounded-pill">Note</span>
-                                    </td>
-                                    <td colspan="2">
-                                        <div class="text-dark">{{ note.content }}</div>
-                                    </td>
+                                    <td class="ps-4"><span class="badge bg-info-subtle text-info rounded-pill">Note</span></td>
+                                    <td colspan="2"><div class="text-dark">{{ note.content }}</div></td>
                                     <td class="small text-muted">{{ note.created_at.strftime('%d/%m/%y %H:%M') }}</td>
                                     <td class="pe-4 text-end text-muted small">Log</td>
                                 </tr>
@@ -147,8 +147,7 @@
                                 {% if not tasks and not notes %}
                                 <tr>
                                     <td colspan="5" class="text-center py-5 text-muted">
-                                        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-                                        No activity found yet.
+                                        <i class="bi bi-inbox fs-2 d-block mb-2"></i> No activity found yet.
                                     </td>
                                 </tr>
                                 {% endif %}
@@ -161,7 +160,6 @@
     </div>
 </div>
 
-<!-- Modal: Add Task -->
 <div class="modal fade" id="activityModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4">
@@ -189,7 +187,6 @@
     </div>
 </div>
 
-<!-- Modal: Add Note -->
 <div class="modal fade" id="noteModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4">
@@ -214,6 +211,12 @@
 </div>
 
 <script>
+    // Tự động căn chỉnh chiều rộng input khi trang vừa load xong
+    window.onload = function() {
+        const input = document.getElementById('name-input');
+        if(input) input.style.width = ((input.value.length + 1) * 18) + 'px';
+    };
+
     async function autoSave(element) {
         const field = element.getAttribute('data-field');
         const value = element.value;
@@ -233,7 +236,9 @@
                 indicator.innerHTML = '<i class="bi bi-check-circle-fill"></i> Saved';
                 setTimeout(() => { indicator.style.display = 'none'; }, 2000);
             }
-        } catch (e) { indicator.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error!'; }
+        } catch (e) { 
+            indicator.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error!'; 
+        }
     }
 </script>
 {% endblock %}

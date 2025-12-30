@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Hiệu suất - {{ staff.username }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+    <div class="mb-4 d-flex align-items-center gap-3">
+        <a href="/admin/users" class="btn btn-light rounded-circle shadow-sm"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h4 class="fw-bold mb-0">Dashboard: {{ staff.username }}</h4>
+            <span class="badge bg-primary rounded-pill small">Staff Insights</span>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        <div class="col-md-8">
+            <div class="row g-4">
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
+                        <div class="text-muted small fw-bold mb-1">TỔNG TASK</div>
+                        <div class="h2 fw-bold text-primary">{{ stats.total }}</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-success border-4">
+                        <div class="text-muted small fw-bold mb-1 text-success">ĐÃ XONG</div>
+                        <div class="h2 fw-bold text-success">{{ stats.done }}</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-warning border-4">
+                        <div class="text-muted small fw-bold mb-1 text-warning">CHƯA XONG</div>
+                        <div class="h2 fw-bold text-warning">{{ stats.not_yet }}</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-danger border-4">
+                        <div class="text-muted small fw-bold mb-1 text-danger">TRỄ HẠN (MISSED)</div>
+                        <div class="h2 fw-bold text-danger">{{ stats.missed }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-4 p-4 bg-white h-100 d-flex flex-column align-items-center justify-content-center">
+                <h6 class="fw-bold mb-4">Phân bổ công việc</h6>
+                <div style="width: 220px; height: 220px;">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="bg-light small text-muted">
+                    <tr>
+                        <th class="ps-4">Nội dung</th>
+                        <th>Khách hàng</th>
+                        <th class="text-center">Trạng thái</th>
+                        <th class="pe-4 text-end">Cập nhật</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in tasks %}
+                    <tr>
+                        <td class="ps-4 fw-medium">{{ t.todo_content }}</td>
+                        <td class="small">{{ t.customer_name or '---' }}</td>
+                        <td class="text-center">
+                            <span class="badge {% if t.status == 'Done' %}bg-success-subtle text-success{% elif t.status == 'Missed' %}bg-danger-subtle text-danger{% else %}bg-warning-subtle text-warning{% endif %} rounded-pill px-3">
+                                {{ t.status }}
+                            </span>
+                        </td>
+                        <td class="pe-4 text-end text-muted small">{{ t.updated_at.strftime('%H:%M %d/%m') if t.updated_at else '---' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Done', 'Not Yet', 'Missed'],
+            datasets: [{
+                data: [{{ stats.done }}, {{ stats.not_yet }}, {{ stats.missed }}],
+                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            cutout: '75%',
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 25 } }
+            }
+        }
+    });
+</script>
+{% endblock %}

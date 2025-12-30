@@ -1,0 +1,18 @@
+step 1: push on git
+git add .
+git commit -m "detail"
+git push origin main 
+
+step 2: open console on VULTR.COM
+
+cd/root/crm_mini
+git pull origin main
+systemctl restart crm
+
+
+//check error
+journalctl -u crm -f
+
+
+//git link crm
+ https://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@github.com/nguyenlaamn602/crm_mini.git

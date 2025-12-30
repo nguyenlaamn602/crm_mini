@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - THG</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f1f5f9; height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { width: 380px; border-radius: 20px; border: none; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+    </style>
+</head>
+<body>
+    <div class="card login-card p-4">
+        <h3 class="fw-bold text-center mb-4">THG Login</h3>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for cat, msg in messages %}
+                    <div class="alert alert-{{ cat }} small">{{ msg }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label small fw-bold">USERNAME</label>
+                <input type="text" name="username" class="form-control rounded-pill px-3" required>
+            </div>
+            <div class="mb-4">
+                <label class="form-label small fw-bold">PASSWORD</label>
+                <input type="password" name="password" class="form-control rounded-pill px-3" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 rounded-pill py-2">Login</button>
+        </form>
+        <div class="text-center mt-3">
+            <small class="text-muted">No account? <a href="/register">Register here</a></small>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Profile: {{ lead.full_name }}{% endblock %}
+
+{% block content %}
+<style>
+    /* Inline Editing Styling */
+    .inline-edit { background: transparent; border: 1px solid transparent; padding: 4px 8px; border-radius: 8px; transition: all 0.2s; width: 100%; color: inherit; font-weight: inherit; }
+    .inline-edit:hover { background: rgba(0,0,0,0.03); border-color: #e2e8f0; }
+    .inline-edit:focus { background: #fff; border-color: #4361ee; outline: none; box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1); }
+    .save-status { font-size: 0.75rem; display: none; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .spinner-save { animation: spin 1s linear infinite; display: inline-block; }
+    
+    /* Activity Table Button Styling */
+    .activity-header-btn { border-radius: 10px; padding: 8px 18px; font-weight: 600; font-size: 0.85rem; }
+</style>
+
+<div class="container-fluid p-0">
+    <!-- Header Area -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center gap-3">
+            <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-4" style="width: 55px; height: 55px;">
+                {{ lead.full_name[0].upper() }}
+            </div>
+            <div>
+                <input type="text" class="inline-edit fw-bold fs-3 text-dark mb-0" 
+                       value="{{ lead.full_name }}" data-field="full_name" onblur="autoSave(this)">
+                <div class="d-flex align-items-center gap-2">
+                    <small class="text-muted">ID: {{ lead.psid }}</small>
+                    <span id="save-indicator" class="save-status text-success">
+                        <i class="bi bi-check-circle-fill"></i> Saved
+                    </span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="d-flex gap-2">
+            <a href="/sector/{{ lead.sector }}" class="btn btn-light rounded-pill px-4">Back</a>
+            <form action="/customer/delete/{{ lead.psid }}" method="POST" onsubmit="return confirm('Permanently delete this profile?');">
+                <button type="submit" class="btn btn-outline-danger rounded-pill px-4">Delete Profile</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Profile Sidebar -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
+                <h6 class="text-uppercase text-muted small fw-bold mb-4">Customer Details</h6>
+                
+                <div class="mb-4">
+                    <label class="text-muted small d-block mb-1">PHONE / USERNAME</label>
+                    <input type="text" class="inline-edit fw-bold text-primary p-0 fs-5" 
+                           value="{{ lead.phone_number if lead.phone_number != 'N/A' else '' }}" 
+                           placeholder="Enter phone..." data-field="phone_number" onblur="autoSave(this)">
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-muted small d-block mb-1">SECTOR</label>
+                    <select class="form-select border-0 bg-light rounded-3 fw-semibold" data-field="sector" onchange="autoSave(this)">
+                        <option value="Pod_Drop" {% if lead.sector == 'Pod_Drop' %}selected{% endif %}>Pod / Drop</option>
+                        <option value="Express" {% if lead.sector == 'Express' %}selected{% endif %}>Express</option>
+                        <option value="Warehouse" {% if lead.sector == 'Warehouse' %}selected{% endif %}>Warehouse</option>
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-muted small d-block mb-1">STATUS</label>
+                    <select class="form-select border-0 bg-warning bg-opacity-10 text-dark rounded-3 fw-bold" data-field="status" onchange="autoSave(this)">
+                        <option value="Khách Mới" {% if lead.status == 'Khách Mới' %}selected{% endif %}>New Customer</option>
+                        <option value="Khách hàng tiềm năng" {% if lead.status == 'Khách hàng tiềm năng' %}selected{% endif %}>Potential</option>
+                        <option value="Khách Vip" {% if lead.status == 'Khách Vip' %}selected{% endif %}>VIP</option>
+                        <option value="Khách không đi" {% if lead.status == 'Khách không đi' %}selected{% endif %}>No-show</option>
+                    </select>
+                </div>
+
+                <div class="pt-3 border-top">
+                    <label class="text-muted small d-block">SOURCE</label>
+                    <span class="badge bg-secondary-subtle text-secondary border px-2">{{ lead.source_platform }}</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Activity & Notes Table (Main Content) -->
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden h-100">
+                <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">Activity Log</h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary activity-header-btn shadow-sm" data-bs-toggle="modal" data-bs-target="#activityModal">
+                                <i class="bi bi-calendar-plus me-1"></i> Activity
+                            </button>
+                            <button class="btn btn-outline-primary activity-header-btn" data-bs-toggle="modal" data-bs-target="#noteModal">
+                                <i class="bi bi-journal-text me-1"></i> Notes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light">
+                                <tr class="text-muted small text-uppercase" style="font-size: 0.7rem;">
+                                    <th class="ps-4">Type</th>
+                                    <th>Content</th>
+                                    <th>Assignee</th>
+                                    <th>Date</th>
+                                    <th class="pe-4 text-end">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Tasks List -->
+                                {% for task in tasks %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <span class="badge bg-primary-subtle text-primary rounded-pill">Task</span>
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold text-dark">{{ task.todo_content }}</div>
+                                    </td>
+                                    <td class="small">{{ task.assignee }}</td>
+                                    <td class="small text-muted">{{ task.created_at.strftime('%d/%m/%y %H:%M') }}</td>
+                                    <td class="pe-4 text-end">
+                                        <span class="badge {% if task.status == 'Done' %}bg-success{% else %}bg-warning{% endif %} rounded-pill">
+                                            {{ task.status }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+
+                                <!-- Notes List -->
+                                {% for note in notes %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <span class="badge bg-info-subtle text-info rounded-pill">Note</span>
+                                    </td>
+                                    <td colspan="2">
+                                        <div class="text-dark">{{ note.content }}</div>
+                                    </td>
+                                    <td class="small text-muted">{{ note.created_at.strftime('%d/%m/%y %H:%M') }}</td>
+                                    <td class="pe-4 text-end text-muted small">Log</td>
+                                </tr>
+                                {% endfor %}
+
+                                {% if not tasks and not notes %}
+                                <tr>
+                                    <td colspan="5" class="text-center py-5 text-muted">
+                                        <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                        No activity found yet.
+                                    </td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Task -->
+<div class="modal fade" id="activityModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0 ps-4 pt-4">
+                <h5 class="modal-title fw-bold">Add New Activity</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/customer/activity/add/{{ lead.psid }}" method="POST">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">TODO CONTENT</label>
+                        <textarea name="todo_content" class="form-control rounded-3" rows="3" required placeholder="What needs to be done?"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">ASSIGNEE</label>
+                        <input type="text" name="assignee" class="form-control rounded-3" placeholder="Enter staff name">
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pb-4 pe-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Note -->
+<div class="modal fade" id="noteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0 ps-4 pt-4">
+                <h5 class="modal-title fw-bold">Add New Note</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/customer/note/add/{{ lead.psid }}" method="POST">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted">NOTE CONTENT</label>
+                        <textarea name="content" class="form-control rounded-3" rows="4" required placeholder="Type important notes about this customer..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pb-4 pe-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info text-white rounded-pill px-4">Save Note</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function autoSave(element) {
+        const field = element.getAttribute('data-field');
+        const value = element.value;
+        const indicator = document.getElementById('save-indicator');
+        indicator.innerHTML = '<i class="bi bi-arrow-repeat spinner-save"></i> Saving...';
+        indicator.style.display = 'inline-block';
+        const formData = new FormData();
+        formData.append(field, value);
+        try {
+            const response = await fetch('/customer/update/{{ lead.psid }}', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                indicator.innerHTML = '<i class="bi bi-check-circle-fill"></i> Saved';
+                setTimeout(() => { indicator.style.display = 'none'; }, 2000);
+            }
+        } catch (e) { indicator.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error!'; }
+    }
+</script>
+{% endblock %}

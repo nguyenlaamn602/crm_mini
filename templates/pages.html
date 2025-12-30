@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Central Lead System{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+    <header class="mb-5">
+        <h1 class="fw-bold text-dark">Lead Dashboard</h1>
+    </header>
+
+    <div class="row g-4">
+        <div class="col-xl-4 col-md-6">
+            <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #4361ee !important; cursor: pointer;" onclick="location.href='/sector/Pod_Drop'">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-primary bg-opacity-10 p-3 rounded-3 text-primary me-3">
+                        <i class="bi bi-box-seam fs-3"></i>
+                    </div>
+                    <h5 class="mb-0 fw-bold">Pod / Drop</h5>
+                </div>
+                <div class="display-5 fw-bold text-primary mb-1">{{ stats.pod_drop }}</div>
+                <div class="text-muted small">Total Customers</div>
+            </div>
+        </div>
+
+        <div class="col-xl-4 col-md-6">
+            <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #0ea5e9 !important; cursor: pointer;" onclick="location.href='/sector/Express'">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-info bg-opacity-10 p-3 rounded-3 text-info me-3">
+                        <i class="bi bi-lightning-charge fs-3"></i>
+                    </div>
+                    <h5 class="mb-0 fw-bold">Express</h5>
+                </div>
+                <div class="display-5 fw-bold text-info mb-1">{{ stats.express }}</div>
+                <div class="text-muted small">Total Customers</div>
+            </div>
+        </div>
+
+        <div class="col-xl-4 col-md-6">
+            <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #10b981 !important; cursor: pointer;" onclick="location.href='/sector/Warehouse'">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-success bg-opacity-10 p-3 rounded-3 text-success me-3">
+                        <i class="bi bi-house-door fs-3"></i>
+                    </div>
+                    <h5 class="mb-0 fw-bold">Warehouse</h5>
+                </div>
+                <div class="display-5 fw-bold text-success mb-1">{{ stats.warehouse }}</div>
+                <div class="text-muted small">Total Customers</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 2000">
+    <div id="syncToast" class="toast align-items-center text-white bg-dark border-0 shadow-lg" role="alert">
+        <div class="d-flex p-2">
+            <div class="toast-body">✨ System automatically updated data!</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let lastSync = 0;
+    const toast = new bootstrap.Toast(document.getElementById('syncToast'));
+    setInterval(() => {
+        fetch('/sync-status').then(r => r.json()).then(data => {
+            if (lastSync !== 0 && data.last_sync !== lastSync) {
+                toast.show();
+                setTimeout(() => location.reload(), 3000);
+            }
+            lastSync = data.last_sync;
+        });
+    }, 30000);
+</script>
+{% endblock %}

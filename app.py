@@ -1124,7 +1124,13 @@ def pancake_broadcast_send():
             })
             continue
 
-        page = db.pages.find_one({"id": lead.get("page_id")})
+        page = db.pages.find_one({
+    "$or": [
+        {"id": lead.get("page_id")},
+        {"id": service._normalize_page_id(lead.get("page_id"))}
+    ]
+})
+
         if not page or not page.get("access_token"):
             results.append({
                 "psid": lead["psid"],
@@ -1135,7 +1141,7 @@ def pancake_broadcast_send():
 
         try:
             service.send_message(
-                page_id=lead["page_id"],
+                page_id=lead["page_id"], 
                 conversation_id=lead["conversation_id"],
                 access_token=page["access_token"],
                 message=message,

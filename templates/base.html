@@ -9,23 +9,23 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <title>{% block title %}THG CRM{% endblock %}</title>
+
     <style>
-        :root { 
-            --sidebar-width: 260px; 
+        :root {
+            --sidebar-width: 260px;
             --sidebar-collapsed-width: 80px;
-            --primary-color: #4361ee; 
+            --primary-color: #4361ee;
             --bg-body: #f8fafc;
             --sidebar-bg: #ffffff;
             --transition-speed: 0.3s;
         }
-        
-        body { 
-            background-color: var(--bg-body); 
-            font-family: 'Inter', sans-serif; 
+
+        body {
+            background-color: var(--bg-body);
+            font-family: 'Inter', sans-serif;
             overflow-x: hidden;
         }
-        
-        /* SIDEBAR BASE */
+
         .sidebar {
             width: var(--sidebar-width);
             height: 100vh;
@@ -36,125 +36,91 @@
             padding: 1.25rem;
             z-index: 1000;
             transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
-            overflow-x: hidden;
             display: flex;
             flex-direction: column;
         }
-        
-        /* COLLAPSED STATE */
-        .sidebar.collapsed { 
-            width: var(--sidebar-collapsed-width); 
-            padding: 1.25rem 0.75rem; 
-        }
-        
-        /* MAIN CONTENT ADJUSTMENT */
-        .main-content { 
-            margin-left: var(--sidebar-width); 
-            padding: 2rem; 
-            transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1); 
-        }
-        
-        .main-content.expanded { 
-            margin-left: var(--sidebar-collapsed-width); 
+
+        .sidebar.collapsed {
+            width: var(--sidebar-collapsed-width);
+            padding: 1.25rem 0.75rem;
         }
 
-        /* TOGGLE BUTTON */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+            transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .main-content.expanded {
+            margin-left: var(--sidebar-collapsed-width);
+        }
+
         .toggle-btn {
-            background: #f1f5f9; 
-            border: none; 
+            background: #f1f5f9;
+            border: none;
             color: #64748b;
-            font-size: 1.25rem; 
-            cursor: pointer; 
+            font-size: 1.25rem;
+            cursor: pointer;
             margin-bottom: 1.5rem;
-            display: flex; 
-            align-items: center;
-            justify-content: center; 
             width: 40px;
             height: 40px;
             border-radius: 10px;
-            transition: 0.2s;
             margin-left: auto;
             margin-right: auto;
         }
+
         .toggle-btn:hover { background: var(--primary-color); color: #fff; }
 
-        /* BRANDING */
-        .brand { 
-            font-size: 1.25rem; 
-            font-weight: 800; 
-            color: var(--primary-color); 
-            text-decoration: none; 
-            display: flex; 
-            align-items: center; 
-            gap: 12px; 
+        .brand {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: var(--primary-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
             margin-bottom: 2rem;
             padding: 0 10px;
-            overflow: hidden;
-            white-space: nowrap;
         }
-        .brand i { font-size: 1.75rem; min-width: 35px; text-align: center; }
 
-        /* NAV LINKS */
         .nav-link {
-            display: flex; 
+            display: flex;
             align-items: center;
-            padding: 12px 14px; 
+            padding: 12px 14px;
             border-radius: 12px;
-            color: #64748b; 
-            font-weight: 500; 
-            transition: 0.2s;
-            text-decoration: none; 
+            color: #64748b;
+            font-weight: 500;
+            text-decoration: none;
             margin-bottom: 4px;
-            white-space: nowrap;
-            overflow: hidden;
         }
-        
-        .nav-link i { 
-            font-size: 1.25rem; 
-            min-width: 30px; 
-            margin-right: 12px;
-            display: flex; 
-            justify-content: center; 
-            transition: margin var(--transition-speed);
-        }
-        
-        .sidebar.collapsed .nav-link i { margin-right: 0; }
-        .sidebar.collapsed .nav-link { justify-content: center; padding: 12px 0; }
 
-        /* TEXT HIDING LOGIC */
-        .nav-text, .brand-text, .section-title, .user-details { 
-            opacity: 1;
-            transition: opacity 0.2s;
+        .nav-link i {
+            font-size: 1.25rem;
+            min-width: 30px;
+            margin-right: 12px;
         }
-        
-        .sidebar.collapsed .nav-text, 
+
+        .sidebar.collapsed .nav-link i { margin-right: 0; }
+        .sidebar.collapsed .nav-text,
         .sidebar.collapsed .brand-text,
         .sidebar.collapsed .section-title,
-        .sidebar.collapsed .user-details { 
-            display: none;
-            opacity: 0;
-        }
-        
-        .nav-link:hover { background: #f1f5f9; color: var(--primary-color); }
-        .nav-link.active { background: var(--primary-color); color: #fff; box-shadow: 0 4px 12px rgba(67, 97, 238, 0.2); }
-        .nav-link.active i { color: #fff; }
+        .sidebar.collapsed .user-details { display: none; }
 
-        /* SECTION TITLE */
+        .nav-link:hover { background: #f1f5f9; color: var(--primary-color); }
+        .nav-link.active { background: var(--primary-color); color: #fff; }
+
         .section-title {
             color: #94a3b8;
             font-size: 0.7rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05rem;
             margin: 1.5rem 0 0.75rem 14px;
         }
 
-        /* USER SECTION */
         .user-section {
             margin-top: auto;
             border-top: 1px solid #f1f5f9;
             padding-top: 1rem;
-            overflow: hidden;
         }
 
         .user-profile-brief {
@@ -165,8 +131,6 @@
             background: #f8fafc;
             margin-bottom: 8px;
         }
-        
-        .sidebar.collapsed .user-profile-brief { background: transparent; justify-content: center; padding: 10px 0; }
 
         .avatar {
             width: 32px; height: 32px;
@@ -177,118 +141,119 @@
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 0.8rem;
-            flex-shrink: 0;
         }
     </style>
 </head>
+
 <body>
-    <div class="sidebar" id="sidebar">
-        <button class="toggle-btn" id="sidebar-toggle" title="Toggle Menu">
-            <i class="bi bi-chevron-left" id="toggle-icon"></i>
-        </button>
-        
-        <a href="/" class="brand">
-            <i class="bi bi-cpu-fill"></i> 
-            <span class="brand-text">THG CRM</span>
+<div class="sidebar" id="sidebar">
+
+    <button class="toggle-btn" id="sidebar-toggle">
+        <i class="bi bi-chevron-left" id="toggle-icon"></i>
+    </button>
+
+    <a href="/" class="brand">
+        <i class="bi bi-cpu-fill"></i>
+        <span class="brand-text">THG CRM</span>
+    </a>
+
+    <div class="nav flex-column mb-auto">
+
+        <!-- DASHBOARD -->
+        <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">
+            <i class="bi bi-grid-1x2-fill"></i>
+            <span class="nav-text">Dashboard</span>
         </a>
 
-        <div class="nav flex-column mb-auto">
-            <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}" title="Dashboard">
-                <i class="bi bi-grid-1x2-fill"></i> 
-                <span class="nav-text">Dashboard</span>
-            </a>
-            
-            <div class="section-title">Main Sectors</div>
-            
-            <a href="/sector/Pod_Drop" class="nav-link {% if sector_id == 'Pod_Drop' %}active{% endif %}" title="Pod / Drop">
-                <i class="bi bi-box-seam"></i> 
-                <span class="nav-text">Pod / Drop</span>
-            </a>
-            <a href="/sector/Express" class="nav-link {% if sector_id == 'Express' %}active{% endif %}" title="Express">
-                <i class="bi bi-lightning-charge"></i> 
-                <span class="nav-text">Express</span>
-            </a>
-            <a href="/sector/Warehouse" class="nav-link {% if sector_id == 'Warehouse' %}active{% endif %}" title="Warehouse">
-                <i class="bi bi-house-door"></i> 
-                <span class="nav-text">Warehouse</span>
-            </a>
+        <div class="section-title">Main Sectors</div>
 
-            <div class="section-title">Operations</div>
+        <a href="/sector/Pod_Drop" class="nav-link {% if sector_id == 'Pod_Drop' %}active{% endif %}">
+            <i class="bi bi-box-seam"></i>
+            <span class="nav-text">Pod / Drop</span>
+        </a>
+        <a href="/sector/Express" class="nav-link {% if sector_id == 'Express' %}active{% endif %}">
+            <i class="bi bi-lightning-charge"></i>
+            <span class="nav-text">Express</span>
+        </a>
+        <a href="/sector/Warehouse" class="nav-link {% if sector_id == 'Warehouse' %}active{% endif %}">
+            <i class="bi bi-house-door"></i>
+            <span class="nav-text">Warehouse</span>
+        </a>
 
-            <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}" title="Task Management">
-                <i class="bi bi-clipboard-check"></i> 
-                <span class="nav-text">Task Management</span>
-            </a>
+        <div class="section-title">Operations</div>
 
-            {% if current_user.role == 'admin' %}
-            <div class="section-title">Administration</div>
-            <a href="/admin/users" class="nav-link {% if request.path == '/admin/users' %}active{% endif %}" title="User Management">
-                <i class="bi bi-people-fill"></i> 
-                <span class="nav-text">User Management</span>
-            </a>
-            {% endif %}
-        </div>
+        <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}">
+            <i class="bi bi-clipboard-check"></i>
+            <span class="nav-text">Task Management</span>
+        </a>
 
-        {% if current_user.is_authenticated %}
-        <div class="user-section">
-            <div class="user-profile-brief">
-                <div class="avatar">{{ current_user.username[0].upper() }}</div>
-                <div class="user-details ms-3 overflow-hidden">
-                    <div class="fw-bold text-dark small text-truncate" style="max-width: 130px;">{{ current_user.username }}</div>
-                    <div class="text-muted" style="font-size: 0.65rem;">{{ current_user.role.upper() }}</div>
-                </div>
-            </div>
-            <a href="/logout" class="nav-link text-danger" title="Logout">
-                <i class="bi bi-box-arrow-right"></i> 
-                <span class="nav-text">Sign Out</span>
-            </a>
-        </div>
+        <a href="/corp-tasks" class="nav-link {% if request.path.startswith('/corp-tasks') %}active{% endif %}">
+            <i class="bi bi-building"></i>
+            <span class="nav-text">Task Tổng công ty</span>
+        </a>
+
+        <!-- ✅ NEW: PANCAKE BROADCAST (ADMIN ONLY) -->
+        {% if current_user.role == 'admin' %}
+        <a href="/pancake/broadcast"
+           class="nav-link {% if request.path.startswith('/pancake/broadcast') %}active{% endif %}">
+            <i class="bi bi-megaphone-fill"></i>
+            <span class="nav-text">Pancake Broadcast</span>
+        </a>
+        {% endif %}
+
+        {% if current_user.role == 'admin' %}
+        <div class="section-title">Administration</div>
+
+        <a href="/admin/users" class="nav-link {% if request.path == '/admin/users' %}active{% endif %}">
+            <i class="bi bi-people-fill"></i>
+            <span class="nav-text">User Management</span>
+        </a>
         {% endif %}
     </div>
 
-    <div class="main-content" id="main-content">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="alert alert-{{ category }} alert-dismissible fade show rounded-4 shadow-sm border-0 mb-4" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-              </div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
+    {% if current_user.is_authenticated %}
+    <div class="user-section">
+        <div class="user-profile-brief">
+            <div class="avatar">{{ current_user.username[0].upper() }}</div>
+            <div class="user-details ms-3">
+                <div class="fw-bold small">{{ current_user.username }}</div>
+                <div class="text-muted" style="font-size:0.65rem;">{{ current_user.role.upper() }}</div>
+            </div>
+        </div>
 
-        {% block content %}{% endblock %}
+        <a href="/logout" class="nav-link text-danger">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="nav-text">Sign Out</span>
+        </a>
     </div>
+    {% endif %}
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        const sidebar = document.getElementById('sidebar');
-        const mainContent = document.getElementById('main-content');
-        const toggleBtn = document.getElementById('sidebar-toggle');
-        const toggleIcon = document.getElementById('toggle-icon');
+<div class="main-content" id="main-content">
+    {% block content %}{% endblock %}
+</div>
 
-        function updateUI(isCollapsed) {
-            if (isCollapsed) {
-                sidebar.classList.add('collapsed');
-                mainContent.classList.add('expanded');
-                toggleIcon.classList.replace('bi-chevron-left', 'bi-chevron-right');
-            } else {
-                sidebar.classList.remove('collapsed');
-                mainContent.classList.remove('expanded');
-                toggleIcon.classList.replace('bi-chevron-right', 'bi-chevron-left');
-            }
-        }
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('main-content');
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    const toggleIcon = document.getElementById('toggle-icon');
 
-        const savedState = localStorage.getItem('sidebar-collapsed') === 'true';
-        updateUI(savedState);
+    function updateUI(collapsed) {
+        sidebar.classList.toggle('collapsed', collapsed);
+        mainContent.classList.toggle('expanded', collapsed);
+        toggleIcon.className = collapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+    }
 
-        toggleBtn.addEventListener('click', () => {
-            const isNowCollapsed = !sidebar.classList.contains('collapsed');
-            updateUI(isNowCollapsed);
-            localStorage.setItem('sidebar-collapsed', isNowCollapsed);
-        });
-    </script>
+    const saved = localStorage.getItem('sidebar-collapsed') === 'true';
+    updateUI(saved);
+
+    toggleBtn.onclick = () => {
+        const collapsed = !sidebar.classList.contains('collapsed');
+        updateUI(collapsed);
+        localStorage.setItem('sidebar-collapsed', collapsed);
+    };
+</script>
 </body>
 </html>

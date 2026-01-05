@@ -8,7 +8,6 @@ from datetime import datetime
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 import requests, time, random, string, re
-import uuid
 
 app = Flask(__name__)
 
@@ -263,14 +262,6 @@ def sync_lark_tasks_task():
             if lu:
                 u_id = lu['_id']
 
-            # NOTE: Lark field "Time" trước đây hay map vào time_log.
-            # Theo yêu cầu: time_log -> deadline. Nếu Lark trả string không parse được thì giữ None.
-            # Bạn có thể chỉnh lại khi biết format "Time" thực tế bên Lark.
-            raw_deadline = f.get('Time') or f.get('Deadline') or None
-            due_at = None
-            if isinstance(raw_deadline, str):
-                due_at = parse_due_at(raw_deadline)
-
             db.tasks.update_one(
                 {"id": item.get('record_id')},
                 {"$set": {
@@ -279,7 +270,7 @@ def sync_lark_tasks_task():
                     "assignee": assignee,
                     "assigned_to": u_id,
                     "customer_name": f.get('Tên Nhóm Khách/Khách mới', ''),
-                    "due_at": due_at,
+                    "due_at": None,
                     "updated_at": now_dt()
                 }},
                 upsert=True
@@ -305,6 +296,7 @@ def pancake_sync_task():
                 print(f"[PANCAKE] Skip page (missing token): page_id={page_id}")
                 continue
 
+            # giữ API call y như hiện tại của bạn (get_all_leads returns conversation_id)
             leads = service.get_all_leads(page_id, token)
 
             for l in leads:
@@ -316,7 +308,7 @@ def pancake_sync_task():
                         "sector": l['sector'],
                         "status": l['status'],
                         "page_id": page_id,
-                        "page_username": p_username,
+                        "page_username": p_username,       # ✅ always write username from pages
                         "conversation_id": l.get('conversation_id'),
                         "source_platform": "Pancake",
                         "updated_at": now_dt()
@@ -431,136 +423,6 @@ def update_customer(psid):
         return jsonify({"status": "success"})
     return redirect(url_for('view_customer_detail', psid=psid))
 
-# ✅ ADD CUSTOMER (Manual)
-@app.route('/customer/add', methods=['POST'])
-@login_required
-def add_customer():
-    full_name = (request.form.get("full_name") or "").strip()
-    if not full_name:
-        flash("Thiếu tên khách hàng", "danger")
-        return redirect(request.referrer or url_for("index"))
-
-    phone_number = (request.form.get("phone_number") or "").strip()
-    sector = request.form.get("sector") or "Pod_Drop"
-    status = request.form.get("status") or "Khách Mới"
-
-    psid = str(uuid.uuid4())
-
-    db.leads.insert_one({
-        "psid": psid,
-        "full_name": full_name,
-        "phone_number": phone_number if phone_number else "N/A",
-        "sector": sector,
-        "status": status,
-        "page_id": "MANUAL",
-        "source_platform": "Manual",
-        "updated_at": now_dt(),
-        "created_at": now_dt(),
-    })
-    return redirect(url_for("view_sector", name=sector))
-
-# ✅ DELETE CUSTOMER (Admin only)
-@app.route('/customer/delete/<psid>', methods=['POST'])
-@login_required
-def delete_customer(psid):
-    if current_user.role != 'admin':
-        return redirect(request.referrer or url_for('index'))
-
-    db.leads.delete_one({"psid": psid})
-    # optional: cleanup tasks/notes for this customer (không bắt buộc)
-    # db.tasks.delete_many({"customer_psid": psid})
-    # db.notes.delete_many({"customer_psid": psid})
-    return redirect(url_for('index'))
-
-# ✅ Add Note in customer detail
-@app.route('/customer/note/add/<psid>', methods=['POST'])
-@login_required
-def add_customer_note(psid):
-    content = (request.form.get("content") or "").strip()
-    if content:
-        db.notes.insert_one({
-            "content": content,
-            "customer_psid": psid,
-            "user_id": ObjectId(current_user.id),
-            "created_at": now_dt()
-        })
-    return redirect(url_for("view_customer_detail", psid=psid))
-
-# ✅ Add Activity (Task) from customer profile
-# time_log -> deadline (store as due_at)
-@app.route('/customer/activity/add/<psid>', methods=['POST'])
-@login_required
-def add_customer_activity(psid):
-    lead = db.leads.find_one({"psid": psid})
-    if not lead:
-        return redirect(url_for("index"))
-
-    tid = 'act_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-
-    todo_content = (request.form.get("todo_content") or "").strip()
-    if not todo_content:
-        return redirect(url_for("view_customer_detail", psid=psid))
-
-    status = request.form.get("status") or "Not_yet"
-
-    # ✅ deadline preferred (datetime-local). Fallback to old time_log to avoid breaking UI.
-    raw_deadline = request.form.get("deadline")
-    if not raw_deadline:
-        # old field "time_log" (often only HH:MM). We'll store None or keep as string in legacy field.
-        raw_deadline = request.form.get("time_log")
-
-    due_at = None
-    legacy_time_log = None
-
-    # If it's datetime-local
-    if isinstance(raw_deadline, str) and "T" in raw_deadline:
-        due_at = parse_due_at(raw_deadline)
-    else:
-        # HH:MM only -> keep legacy, no due date
-        legacy_time_log = raw_deadline if raw_deadline else None
-
-    assigned_to_oid = ObjectId(current_user.id)
-    assignee_name = current_user.username
-
-    # Admin can assign to user via dropdown
-    if current_user.role == "admin":
-        assigned_user_id = request.form.get("assigned_user_id")
-        if assigned_user_id:
-            u = db.users.find_one({"_id": ObjectId(assigned_user_id)})
-            if u:
-                assigned_to_oid = u["_id"]
-                assignee_name = u.get("username", assignee_name)
-
-    created_by_oid = ObjectId(current_user.id)
-
-    db.tasks.insert_one({
-        "id": tid,
-        "todo_content": todo_content,
-        "customer_name": lead.get("full_name"),
-        "customer_psid": psid,
-
-        "assignee": assignee_name,
-        "assigned_to": assigned_to_oid,
-
-        "status": status,
-        "due_at": due_at,                 # ✅ deadline stored here
-        "deadline": due_at,               # optional alias
-        "time_log": legacy_time_log,      # legacy fallback
-
-        "user_id": created_by_oid,
-        "created_at": now_dt(),
-        "updated_at": now_dt(),
-
-        # for delete permission
-        "assigned_by": current_user.username,
-        "assigned_by_role": current_user.role,
-        "assigned_at": now_dt() if assigned_to_oid != created_by_oid else None,
-        "notify_pending": True if assigned_to_oid != created_by_oid else False,
-        "missed_notify_pending": False
-    })
-
-    return redirect(url_for("view_customer_detail", psid=psid))
-
 # ---------------------------
 # Task thường
 # ---------------------------
@@ -605,7 +467,7 @@ def add_task():
     target = db.users.find_one({"_id": ObjectId(aid)})
 
     status = "Not_yet"
-    due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))  # ✅ accept deadline alias
+    due_at = parse_due_at(request.form.get('due_at'))
     customer_name = (request.form.get('customer_name') or '').strip()
 
     customer_psid, normalized_name = link_customer_for_task(customer_name)
@@ -624,17 +486,13 @@ def add_task():
         "assignee": target['username'] if target else '---',
         "assigned_to": assigned_to_oid,
         "status": status,
-        "due_at": due_at,                  # ✅ deadline stored here
-        "deadline": due_at,                # optional alias
+        "due_at": due_at,
         "user_id": created_by_oid,
         "created_at": now_dt(),
         "updated_at": now_dt(),
         "notify_pending": notify_pending,
-
         "assigned_by": current_user.username,
-        "assigned_by_role": current_user.role,   # ✅ used for delete permission
         "assigned_at": now_dt() if notify_pending else None,
-
         "missed_notify_pending": False
     })
     return redirect(url_for('view_tasks'))
@@ -656,32 +514,6 @@ def quick_update_task(id):
         upd["missed_notify_pending"] = True
     db.tasks.update_one({"id": id}, {"$set": upd})
     return jsonify({"status": "success", "next": next_status})
-
-# ✅ DELETE TASK (Admin can delete all; user cannot delete tasks assigned by admin)
-@app.route('/task/delete/<id>', methods=['POST'])
-@login_required
-def delete_task(id):
-    t = db.tasks.find_one({"id": id})
-    if not t:
-        return redirect(url_for('view_tasks'))
-
-    if current_user.role == "admin":
-        db.tasks.delete_one({"id": id})
-        return redirect(request.referrer or url_for('view_tasks'))
-
-    # user rule:
-    # - allow delete only if user is creator
-    # - but forbid if task was assigned by admin
-    me = ObjectId(current_user.id)
-    if t.get("user_id") != me:
-        return redirect(request.referrer or url_for('view_tasks'))
-
-    if t.get("assigned_by_role") == "admin":
-        flash("Bạn không thể xoá task do admin phân bổ.", "danger")
-        return redirect(request.referrer or url_for('view_tasks'))
-
-    db.tasks.delete_one({"id": id})
-    return redirect(request.referrer or url_for('view_tasks'))
 
 # ---------------------------
 # ✅ Task Tổng công ty
@@ -730,7 +562,7 @@ def add_corp_task():
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
     assigned_user_id = request.form.get('assigned_user_id')
-    due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
+    due_at = parse_due_at(request.form.get('due_at'))
 
     if not title or department not in CORP_DEPARTMENTS or not assigned_user_id or not due_at:
         flash('Thiếu thông tin khi tạo corp task', 'danger')
@@ -756,7 +588,6 @@ def add_corp_task():
         "created_at": now_dt(),
         "updated_at": now_dt(),
         "assigned_by": current_user.username,
-        "assigned_by_role": current_user.role,
         "assigned_at": now_dt(),
 
         "notify_pending": True if notify_pending else False,
@@ -776,7 +607,7 @@ def update_corp_task(id):
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
     assigned_user_id = request.form.get('assigned_user_id')
-    due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
+    due_at = parse_due_at(request.form.get('due_at'))
 
     if not title or department not in CORP_DEPARTMENTS or not assigned_user_id or not due_at:
         flash('Thiếu thông tin khi update corp task', 'danger')
@@ -799,7 +630,6 @@ def update_corp_task(id):
     if u["_id"] != t.get("assigned_to"):
         upd["notify_pending"] = True
         upd["assigned_by"] = current_user.username
-        upd["assigned_by_role"] = current_user.role
         upd["assigned_at"] = now_dt()
         upd["status"] = "Unreceived"
 
@@ -824,15 +654,6 @@ def update_corp_status(id):
 
     db.corp_tasks.update_one({"id": id}, {"$set": {"status": new_status, "updated_at": now_dt()}})
     return jsonify({"status": "success"})
-
-# ✅ DELETE CORP TASK (Admin only)
-@app.route('/corp-task/delete/<id>', methods=['POST'])
-@login_required
-def delete_corp_task(id):
-    if current_user.role != "admin":
-        return redirect(request.referrer or url_for("view_corp_tasks"))
-    db.corp_tasks.delete_one({"id": id})
-    return redirect(request.referrer or url_for("view_corp_tasks"))
 
 # ---------------------------
 # Notifications (task thường + corp task)
@@ -941,68 +762,6 @@ def api_admin_missed_ack():
     return jsonify({"status": "success"})
 
 # ---------------------------
-# ✅ ADMIN: User Management (Admin access)
-# ---------------------------
-@app.route('/admin/users')
-@login_required
-def admin_users():
-    if current_user.role != 'admin':
-        return redirect(url_for('index'))
-
-    users = []
-    for u in db.users.find():
-        uo = User(u)
-        uo.pending_tasks = db.tasks.count_documents({
-            "assigned_to": ObjectId(u["_id"]),
-            "status": {"$ne": "Done"}
-        })
-        users.append(uo)
-
-    return render_template('user.html', users=users)
-
-@app.route('/admin/user/detail/<user_id>')
-@login_required
-def admin_user_detail(user_id):
-    if current_user.role != 'admin':
-        return redirect(url_for('index'))
-
-    u = db.users.find_one({"_id": ObjectId(user_id)})
-    if not u:
-        return redirect(url_for('admin_users'))
-
-    s = {
-        "total": db.tasks.count_documents({"assigned_to": ObjectId(user_id)}),
-        "done": db.tasks.count_documents({"assigned_to": ObjectId(user_id), "status": "Done"}),
-        "not_yet": db.tasks.count_documents({"assigned_to": ObjectId(user_id), "status": "Not_yet"}),
-        "missed": db.tasks.count_documents({"assigned_to": ObjectId(user_id), "status": "Missed"})
-    }
-    tasks = list(db.tasks.find({"assigned_to": ObjectId(user_id)}).sort("updated_at", -1))
-    return render_template('user_detail.html', staff=u, stats=s, tasks=tasks)
-
-@app.route('/admin/user/update_role/<user_id>', methods=['POST'])
-@login_required
-def update_user_role(user_id):
-    if current_user.role != 'admin':
-        return redirect(url_for('index'))
-
-    # prevent self role change if needed (optional)
-    if ObjectId(user_id) == ObjectId(current_user.id):
-        return redirect(url_for('admin_users'))
-
-    db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"role": request.form.get('role')}})
-    return redirect(url_for('admin_users'))
-
-@app.route('/admin/user/delete/<user_id>', methods=['POST'])
-@login_required
-def delete_user(user_id):
-    if current_user.role != 'admin':
-        return redirect(url_for('index'))
-
-    if ObjectId(user_id) != ObjectId(current_user.id):
-        db.users.delete_one({"_id": ObjectId(user_id)})
-    return redirect(url_for('admin_users'))
-
-# ---------------------------
 # Sync utilities
 # ---------------------------
 @app.route('/sync-status')
@@ -1013,6 +772,7 @@ def sync_status():
 @app.route('/sync-now')
 @login_required
 def sync_now():
+    # ✅ refresh mạnh để tránh stuck token/username
     init_pancake_pages(force_refresh=True)
     pancake_sync_task()
     sync_all_lark_task()
@@ -1026,138 +786,6 @@ def lark_webhook():
         return jsonify({"challenge": d["challenge"]})
     return jsonify({"status": "ok"}), 200
 
-@app.route('/pancake/broadcast')
-@login_required
-def pancake_broadcast():
-    if current_user.role != 'admin':
-        return redirect(url_for('index'))
-
-    sectors = ["Pod_Drop", "Express", "Warehouse"]
-    return render_template('pancake_broadcast.html', sectors=sectors)
-
-@app.route('/api/pancake/broadcast/leads')
-@login_required
-def api_pancake_broadcast_leads():
-    sector = request.args.get('sector')
-
-    q = {
-        "source_platform": "Pancake"
-    }
-    if sector:
-        q["sector"] = sector
-
-    leads = list(db.leads.find(q, {
-        "_id": 0,                     # ✅ FIX Ở ĐÂY
-        "psid": 1,
-        "full_name": 1,
-        "page_id": 1,
-        "page_username": 1,
-        "conversation_id": 1,
-        "sector": 1
-    }).sort("updated_at", -1))
-
-    return jsonify({"leads": leads})
-
-
-@app.route('/api/pancake/upload', methods=['POST'])
-@login_required
-def pancake_upload():
-    if current_user.role != 'admin':
-        return jsonify({"error": "forbidden"}), 403
-
-    file = request.files.get('file')
-    page_id = request.form.get('page_id')
-
-    if not file or not page_id:
-        return jsonify({"error": "missing file or page_id"}), 400
-
-    page = db.pages.find_one({"id": page_id})
-    if not page or not page.get("access_token"):
-        return jsonify({"error": "page token not found"}), 400
-
-    service = PancakeService()
-    content = service.upload_content(
-        page_id=page_id,
-        access_token=page["access_token"],
-        file=file
-    )
-
-    return jsonify(content)
-
-@app.route('/api/pancake/broadcast/send', methods=['POST'])
-@login_required
-def pancake_broadcast_send():
-    if current_user.role != 'admin':
-        return jsonify({"error": "forbidden"}), 403
-
-    data = request.get_json() or {}
-    message = data.get("message")
-    content_ids = data.get("content_ids", [])
-    lead_ids = data.get("lead_ids", [])
-    send_all = data.get("send_all", False)
-    sector = data.get("sector")
-
-    if not message and not content_ids:
-        return jsonify({"error": "empty message"}), 400
-
-    q = {
-        "source_platform": "Pancake"
-    }
-
-    if not send_all:
-        q["psid"] = {"$in": lead_ids}
-    elif sector:
-        q["sector"] = sector
-
-    leads = list(db.leads.find(q))
-    service = PancakeService()
-
-    results = []
-
-    for lead in leads:
-        # 🚫 CHƯA TỪNG CHAT → KHÔNG GỬI ĐƯỢC
-        if not lead.get("conversation_id"):
-            results.append({
-                "psid": lead["psid"],
-                "status": "skipped",
-                "reason": "no_conversation"
-            })
-            continue
-
-        page = db.pages.find_one({"id": lead.get("page_id")})
-        if not page or not page.get("access_token"):
-            results.append({
-                "psid": lead["psid"],
-                "status": "fail",
-                "error": "missing_page_token"
-            })
-            continue
-
-        try:
-            service.send_message(
-                page_id=lead["page_id"],
-                conversation_id=lead["conversation_id"],
-                access_token=page["access_token"],
-                message=message,
-                content_ids=content_ids
-            )
-            results.append({
-                "psid": lead["psid"],
-                "status": "success"
-            })
-        except Exception as e:
-            results.append({
-                "psid": lead["psid"],
-                "status": "fail",
-                "error": str(e)
-            })
-
-    return jsonify({
-        "total": len(results),
-        "results": results
-    })
-
-
 if __name__ == '__main__':
     if db.users.count_documents({"username": "admin"}) == 0:
         db.users.insert_one({
@@ -1167,6 +795,7 @@ if __name__ == '__main__':
             "created_at": now_dt()
         })
 
+    # ✅ refresh ngay khi start app
     init_pancake_pages(force_refresh=True)
 
     if not scheduler.running:

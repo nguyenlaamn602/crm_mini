@@ -10,14 +10,14 @@
                 <i class="bi bi-plus-lg me-1"></i> Add New Task
             </button>
         </div>
-        
+
         <form action="/tasks" method="GET" class="d-flex gap-3">
             <div class="input-group input-group-sm bg-light rounded-pill px-3 py-1 border-0" style="width: 300px;">
                 <span class="input-group-text border-0 bg-transparent text-muted"><i class="bi bi-search"></i></span>
-                <input type="text" name="search" class="form-control border-0 bg-transparent" 
+                <input type="text" name="search" class="form-control border-0 bg-transparent"
                        placeholder="Search content or customer..." value="{{ request.args.get('search', '') }}">
             </div>
-            
+
             <select name="status" class="form-select form-select-sm bg-light border-0 rounded-pill px-4" onchange="this.form.submit()" style="width: 160px;">
                 <option value="">-- All Statuses --</option>
                 <option value="Not_yet" {% if request.args.get('status') == 'Not_yet' %}selected{% endif %}>Not yet</option>
@@ -35,6 +35,7 @@
                         <th class="ps-4 py-3 text-muted" style="width: 60px;">NO.</th>
                         <th class="text-muted" style="max-width: 400px;">TODO CONTENT</th>
                         <th class="text-muted">TIME (UTC+7)</th>
+                        <th class="text-muted">DEADLINE</th>
                         <th class="text-muted">ASSIGNEE</th>
                         <th class="text-center text-muted">STATUS</th>
                         <th class="pe-4 text-end text-muted">ACTIONS</th>
@@ -59,6 +60,15 @@
                         <td class="small text-secondary fw-medium">
                             <i class="bi bi-clock-history me-1"></i>{{ task.updated_at.strftime('%H:%M %d/%m') if task.updated_at else '---' }}
                         </td>
+
+                        <td class="small text-secondary fw-medium">
+                            {% if task.due_at %}
+                                <i class="bi bi-calendar2-event me-1"></i>{{ task.due_at.strftime('%H:%M %d/%m') }}
+                            {% else %}
+                                ---
+                            {% endif %}
+                        </td>
+
                         <td>
                             <div class="d-flex align-items-center">
                                 <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 28px; height: 28px; font-size: 0.8rem; font-weight: bold;">
@@ -68,7 +78,7 @@
                             </div>
                         </td>
                         <td class="text-center">
-                            <button class="btn p-0 border-0 shadow-none status-toggle-btn" 
+                            <button class="btn p-0 border-0 shadow-none status-toggle-btn"
                                     onclick="toggleTaskStatus(this, '{{ task.id }}', '{{ task.status }}')">
                                 {% if task.status == 'Done' %}
                                     <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2">Done</span>
@@ -79,12 +89,15 @@
                                 {% endif %}
                             </button>
                         </td>
+
                         <td class="pe-4 text-end">
+                            {% set can_manage = (current_user.role == 'admin') or (task.user_id|string == current_user.id|string) %}
                             <div class="dropdown">
                                 <button class="btn btn-link text-muted p-0 shadow-none" data-bs-toggle="dropdown">
                                     <i class="bi bi-three-dots-vertical fs-5"></i>
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
+                                    {% if can_manage %}
                                     <li>
                                         <button class="dropdown-item rounded-2" data-bs-toggle="modal" data-bs-target="#editTask{{ task.id }}">
                                             <i class="bi bi-pencil me-2"></i>Edit
@@ -98,9 +111,17 @@
                                             </button>
                                         </form>
                                     </li>
+                                    {% else %}
+                                    <li>
+                                        <span class="dropdown-item text-muted rounded-2">
+                                            <i class="bi bi-shield-lock me-2"></i>No permission
+                                        </span>
+                                    </li>
+                                    {% endif %}
                                 </ul>
                             </div>
                         </td>
+
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -110,6 +131,8 @@
 </div>
 
 {% for task in tasks %}
+{% set can_manage = (current_user.role == 'admin') or (task.user_id|string == current_user.id|string) %}
+{% if can_manage %}
 <div class="modal fade" id="editTask{{ task.id }}" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -123,6 +146,12 @@
                         <label class="form-label fw-bold text-muted small">TODO CONTENT</label>
                         <textarea name="todo_content" class="form-control rounded-3" rows="3" required>{{ task.todo_content }}</textarea>
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
+                        <input type="text" name="customer_name" class="form-control rounded-3" value="{{ task.customer_name }}">
+                    </div>
+
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-muted small">ASSIGNEE</label>
@@ -147,15 +176,22 @@
                             </select>
                         </div>
                     </div>
+
+                    <div class="mb-3 mt-3">
+                        <label class="form-label fw-bold text-muted small">DEADLINE (optional)</label>
+                        <input type="datetime-local" name="due_at" class="form-control rounded-3"
+                               value="{% if task.due_at %}{{ task.due_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+                    </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
-                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-modal="modal">Cancel</button>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Save Changes</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+{% endif %}
 {% endfor %}
 
 <div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
@@ -175,7 +211,7 @@
                         <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
                         <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
                     </div>
-                    
+
                     {% if current_user.role == 'admin' %}
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">ASSIGN TO STAFF</label>
@@ -197,15 +233,16 @@
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-muted small">STATUS</label>
                             <select name="status" class="form-select rounded-3">
-                                <option value="Not_yet">Not yet</option>
+                                <option value="Not_yet" selected>Not yet</option>
                                 <option value="Done">Done</option>
                                 <option value="Missed">Missed</option>
                             </select>
                         </div>
                     </div>
+
                     <div class="mb-3 mt-3">
-                        <label class="form-label fw-bold text-muted small">TIME (LOG)</label>
-                        <input type="text" name="time_log" class="form-control rounded-3" placeholder="e.g. 25/12 10:00">
+                        <label class="form-label fw-bold text-muted small">DEADLINE (optional)</label>
+                        <input type="datetime-local" name="due_at" class="form-control rounded-3">
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
@@ -217,16 +254,40 @@
     </div>
 </div>
 
+<!-- ✅ Popup Notifications Modal -->
+<div class="modal fade" id="notifyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header bg-dark text-white py-3 px-4">
+        <h5 class="modal-title fw-bold"><i class="bi bi-bell-fill me-2"></i>New Assigned Tasks</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div id="notifyList" class="d-flex flex-column gap-3"></div>
+        <div id="notifyEmpty" class="text-muted text-center py-4" style="display:none;">
+          No new tasks.
+        </div>
+      </div>
+      <div class="modal-footer border-0 bg-light px-4 py-3">
+        <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary rounded-pill px-4" onclick="ackAllNotifications()">Mark as read</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
     async function toggleTaskStatus(button, taskId, currentStatus) {
         let nextStatus = 'Not_yet';
         if (currentStatus === 'Not_yet' || currentStatus === 'New') nextStatus = 'Done';
         else if (currentStatus === 'Done') nextStatus = 'Missed';
-        
+
         button.style.opacity = '0.5';
         button.disabled = true;
+
         const formData = new FormData();
         formData.append('status', nextStatus);
+
         try {
             const response = await fetch(`/task/quick-update/${taskId}`, {
                 method: 'POST',
@@ -234,15 +295,81 @@
                 headers: { 'X-Requested-With': 'XMLHttpRequest' }
             });
             const result = await response.json();
-            if (result.status === 'success') {
-                location.reload();
-            }
+            if (result.status === 'success') location.reload();
         } catch (error) {
             console.error('Error:', error);
             button.style.opacity = '1';
             button.disabled = false;
         }
     }
+
+    // --- Notifications ---
+    let __notifyIds = [];
+
+    function renderNotify(items) {
+        const list = document.getElementById('notifyList');
+        const empty = document.getElementById('notifyEmpty');
+        list.innerHTML = '';
+        __notifyIds = [];
+
+        if (!items || items.length === 0) {
+            empty.style.display = 'block';
+            return;
+        }
+        empty.style.display = 'none';
+
+        items.forEach(it => {
+            __notifyIds.push(it.id);
+            const due = it.due_at ? `<div class="small text-danger"><i class="bi bi-calendar2-event me-1"></i>Deadline: ${it.due_at}</div>` : '';
+            const cust = it.customer_name ? `<div class="small text-muted"><i class="bi bi-person-vcard me-1"></i>${it.customer_name}</div>` : '';
+            const row = document.createElement('div');
+            row.className = 'p-3 bg-light rounded-3 border';
+            row.innerHTML = `
+                <div class="fw-bold text-dark">${it.todo_content}</div>
+                ${cust}
+                ${due}
+                <div class="small text-muted mt-1"><i class="bi bi-person-check me-1"></i>Assigned by: ${it.assigned_by || '---'} • ${it.assigned_at || ''}</div>
+            `;
+            list.appendChild(row);
+        });
+    }
+
+    async function fetchNotifications() {
+        try {
+            const res = await fetch('/api/notifications', { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
+            const data = await res.json();
+            const items = data.items || [];
+            renderNotify(items);
+
+            if (items.length > 0) {
+                const modal = new bootstrap.Modal(document.getElementById('notifyModal'));
+                modal.show();
+            }
+        } catch (e) {
+            console.error('notify error', e);
+        }
+    }
+
+    async function ackAllNotifications() {
+        if (!__notifyIds.length) return;
+        try {
+            await fetch('/api/notifications/ack', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ids: __notifyIds})
+            });
+            const modalEl = document.getElementById('notifyModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+        } catch (e) {
+            console.error('ack error', e);
+        }
+    }
+
+    // Show popup when open /tasks
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchNotifications();
+    });
 </script>
 
 <style>

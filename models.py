@@ -1,8 +1,6 @@
 from datetime import datetime
 from flask_login import UserMixin
 
-# Không dùng db = SQLAlchemy() nữa
-
 class User(UserMixin):
     """Lớp User tương thích với Flask-Login để quản lý session."""
     def __init__(self, user_data):
@@ -11,6 +9,3 @@ class User(UserMixin):
         self.password_hash = user_data.get('password_hash')
         self.role = user_data.get('role', 'user')
         self.created_at = user_data.get('created_at', datetime.now())
-
-# Các class Lead, Task, Note, Page trong bản SQL cũ 
-# giờ đây sẽ được lưu dưới dạng Dictionary trực tiếp vào MongoDB.

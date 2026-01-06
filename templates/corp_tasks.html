@@ -1,15 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Task Tổng công ty - THG{% endblock %}
+{% block title %}Company Tasks - THG{% endblock %}
 
 {% block content %}
+
+{# Status color mapping #}
+{% set status_color = {
+  "Unreceived": "bg-danger",
+  "Received": "bg-brown",
+  "In_progress": "bg-warning text-dark",
+  "Pending_approval": "bg-primary",
+  "Done": "bg-success",
+  "Cancelled": "bg-light text-dark border"
+} %}
+
 <div class="container-fluid p-0">
   <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-4 rounded-4 shadow-sm">
     <div>
-      <h4 class="mb-1 fw-bold text-dark">Task Tổng công ty</h4>
+      <h4 class="mb-1 fw-bold text-dark">Company Tasks</h4>
 
       {% if current_user.role == 'admin' %}
-      <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-3" data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
-        <i class="bi bi-plus-lg me-1"></i> Giao Task mới
+      <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-3"
+              data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
+        <i class="bi bi-plus-lg me-1"></i> Create New Task
       </button>
       {% endif %}
     </div>
@@ -18,12 +30,17 @@
       <input type="hidden" name="dept" value="{{ request.args.get('dept','') }}">
 
       <div class="input-group input-group-sm bg-light rounded-pill px-3 py-1 border-0" style="width: 320px;">
-        <span class="input-group-text border-0 bg-transparent text-muted"><i class="bi bi-search"></i></span>
+        <span class="input-group-text border-0 bg-transparent text-muted">
+          <i class="bi bi-search"></i>
+        </span>
         <input type="text" name="search" class="form-control border-0 bg-transparent"
-               placeholder="Search content / assignee..." value="{{ request.args.get('search', '') }}">
+               placeholder="Search content / assignee..."
+               value="{{ request.args.get('search', '') }}">
       </div>
 
-      <select name="status" class="form-select form-select-sm bg-light border-0 rounded-pill px-4" onchange="this.form.submit()" style="width: 190px;">
+      <select name="status"
+              class="form-select form-select-sm bg-light border-0 rounded-pill px-4"
+              onchange="this.form.submit()" style="width: 190px;">
         <option value="">-- All Statuses --</option>
         {% for st in corp_statuses %}
           <option value="{{ st }}" {% if request.args.get('status') == st %}selected{% endif %}>
@@ -37,15 +54,46 @@
   <!-- Department tabs -->
   <div class="d-flex flex-wrap gap-2 mb-3">
     {% set current_dept = request.args.get('dept','') %}
-    <a href="/corp-tasks" class="btn btn-sm rounded-pill {% if not current_dept %}btn-primary{% else %}btn-outline-primary{% endif %}">
+    <a href="/corp-tasks"
+       class="btn btn-sm rounded-pill {% if not current_dept %}btn-primary{% else %}btn-outline-primary{% endif %}">
       All
     </a>
     {% for d in corp_departments %}
-      <a href="/corp-tasks?dept={{ d }}{% if request.args.get('status') %}&status={{ request.args.get('status') }}{% endif %}{% if request.args.get('search') %}&search={{ request.args.get('search') }}{% endif %}"
+      <a href="/corp-tasks?dept={{ d }}
+        {% if request.args.get('status') %}&status={{ request.args.get('status') }}{% endif %}
+        {% if request.args.get('search') %}&search={{ request.args.get('search') }}{% endif %}"
          class="btn btn-sm rounded-pill {% if current_dept == d %}btn-primary{% else %}btn-outline-primary{% endif %}">
         {{ d }}
       </a>
     {% endfor %}
+  </div>
+
+  <!-- ====================== CHART (NEW) ====================== -->
+  <div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0">Company Task Overview</h6>
+
+      </div>
+
+      <div class="row text-center mb-3">
+        <div class="col">
+          <div class="fw-bold fs-5" id="statTotal">0</div>
+          <div class="text-muted small">Total</div>
+        </div>
+        <div class="col">
+          <div class="fw-bold fs-5 text-success" id="statDone">0</div>
+          <div class="text-muted small">Done</div>
+        </div>
+        <div class="col">
+          <div class="fw-bold fs-5 text-warning" id="statNotDone">0</div>
+          <div class="text-muted small">Not Done</div>
+        </div>
+      </div>
+<div style="width:300px; height:300px; margin: 0 auto;">
+  <canvas id="corpTaskChart"></canvas>
+</div>
+    </div>
   </div>
 
   <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
@@ -55,7 +103,7 @@
           <tr>
             <th class="ps-4 py-3 text-muted" style="width: 60px;">NO.</th>
             <th class="text-muted" style="max-width: 420px;">TASK</th>
-            <th class="text-muted">PHÒNG BAN</th>
+            <th class="text-muted">DEPARTMENT</th>
             <th class="text-muted">DEADLINE</th>
             <th class="text-muted">ASSIGNEE</th>
             <th class="text-center text-muted">STATUS</th>
@@ -95,35 +143,48 @@
 
             <td>
               <div class="d-flex align-items-center">
+                {# Avatar = first letter of first assignee (keeps old style) #}
                 <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2"
                      style="width: 28px; height: 28px; font-size: 0.8rem; font-weight: bold;">
-                  {{ t.assignee[0].upper() if t.assignee else '?' }}
+                  {{ (t.assignees[0][0].upper()) if t.assignees and t.assignees[0] else (t.assignee[0].upper() if t.assignee else '?') }}
                 </div>
-                <span class="small fw-semibold text-dark">{{ t.assignee }}</span>
+
+                {# Multi assignees badges (new) #}
+                <div class="d-flex flex-wrap gap-1">
+                  {% for name in (t.assignees if t.assignees else [t.assignee]) %}
+                    {% if name %}
+                      <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">
+                        {{ name }}
+                      </span>
+                    {% endif %}
+                  {% endfor %}
+                </div>
               </div>
             </td>
 
             <td class="text-center">
-              {% set can_change = (current_user.role == 'admin') or (t.assigned_to|string == current_user.id|string) %}
+              {# Multi-assignee permission: admin OR user is in assigned_to list #}
+              {% set assigned_ids = t.assigned_to | map('string') | list %}
+              {% set can_change = (current_user.role == 'admin') or ((current_user.id|string) in assigned_ids) %}
+
               {% if can_change %}
                 <div class="dropdown">
-                  <button class="btn btn-sm btn-light rounded-pill px-3 dropdown-toggle" data-bs-toggle="dropdown">
+                  <button class="btn btn-sm rounded-pill px-3 dropdown-toggle {{ status_color.get(t.status,'btn-light') }}"
+                          data-bs-toggle="dropdown">
                     {{ corp_status_labels.get(t.status, t.status) }}
                   </button>
                   <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
                     {% for st in corp_statuses %}
-                      {% if st != 'Cancelled' or current_user.role == 'admin' %}
                       <li>
                         <button class="dropdown-item rounded-2" onclick="updateCorpStatus('{{ t.id }}','{{ st }}')">
                           {{ corp_status_labels.get(st, st) }}
                         </button>
                       </li>
-                      {% endif %}
                     {% endfor %}
                   </ul>
                 </div>
               {% else %}
-                <span class="badge bg-light text-dark border rounded-pill px-3 py-2">
+                <span class="badge rounded-pill px-3 py-2 {{ status_color.get(t.status,'bg-light text-dark border') }}">
                   {{ corp_status_labels.get(t.status, t.status) }}
                 </span>
               {% endif %}
@@ -141,18 +202,32 @@
                       <i class="bi bi-pencil me-2"></i>Edit
                     </button>
                   </li>
+
                   <li><hr class="dropdown-divider"></li>
+
                   <li>
-                    <button class="dropdown-item text-danger rounded-2" onclick="updateCorpStatus('{{ t.id }}','Cancelled')">
-                      <i class="bi bi-x-circle me-2"></i>Cancel Task
-                    </button>
+                    <form method="POST" action="/corp-task/delete/{{ t.id }}" onsubmit="return confirm('Delete this task?');">
+                      <button type="submit" class="dropdown-item text-danger rounded-2">
+                        <i class="bi bi-trash me-2"></i>Delete Task
+                      </button>
+                    </form>
                   </li>
+
                   {% else %}
-                  <li>
-                    <span class="dropdown-item text-muted rounded-2">
-                      <i class="bi bi-shield-lock me-2"></i>No permission
-                    </span>
-                  </li>
+                    {# Non-admin: keep menu, but no delete. Show cancel only if can_change #}
+                    {% if can_change %}
+                      <li>
+                        <button class="dropdown-item text-danger rounded-2" onclick="updateCorpStatus('{{ t.id }}','Cancelled')">
+                          <i class="bi bi-x-circle me-2"></i>Cancel Task
+                        </button>
+                      </li>
+                    {% else %}
+                      <li>
+                        <span class="dropdown-item text-muted rounded-2">
+                          <i class="bi bi-shield-lock me-2"></i>No permission
+                        </span>
+                      </li>
+                    {% endif %}
                   {% endif %}
                 </ul>
               </div>
@@ -179,33 +254,46 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
       <div class="modal-header bg-primary text-white py-3 px-4">
-        <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Giao Task Tổng công ty</h5>
+        <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Create Company Task</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
-      <form action="/corp-task/add" method="POST">
+      <form action="/corp-task/add" method="POST" id="addCorpTaskForm">
         <div class="modal-body p-4">
           <div class="mb-3">
-            <label class="form-label fw-bold text-muted small">NỘI DUNG TASK</label>
-            <textarea name="title" class="form-control rounded-3" rows="3" required placeholder="Task cần làm là gì?"></textarea>
+            <label class="form-label fw-bold text-muted small">TASK CONTENT</label>
+            <textarea name="title" class="form-control rounded-3" rows="3" required placeholder="What needs to be done?"></textarea>
           </div>
 
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">PHÒNG BAN</label>
+              <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
               <select name="department" class="form-select rounded-3" required>
                 {% for d in corp_departments %}
                   <option value="{{ d }}">{{ d }}</option>
                 {% endfor %}
               </select>
             </div>
+
             <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">ASSIGNEE</label>
-              <select name="assigned_user_id" class="form-select rounded-3" required>
+              <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
+
+              <div class="border rounded-3 p-2" style="max-height:180px; overflow-y:auto;">
                 {% for u in users_list %}
-                  <option value="{{ u._id }}">{{ u.username }}</option>
+                <div class="form-check">
+                  <input class="form-check-input"
+                         type="checkbox"
+                         name="assigned_user_ids"
+                         value="{{ u._id }}"
+                         id="assign_{{ u._id }}">
+                  <label class="form-check-label" for="assign_{{ u._id }}">
+                    {{ u.username }}
+                  </label>
+                </div>
                 {% endfor %}
-              </select>
+              </div>
+
+              <small class="text-muted">Select one or multiple assignees</small>
             </div>
           </div>
 
@@ -217,7 +305,7 @@
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label fw-bold text-muted small">STATUS</label>
-              <input type="text" class="form-control rounded-3 bg-light" value="Chưa nhận task (auto)" readonly disabled>
+              <input type="text" class="form-control rounded-3 bg-light" value="Unreceived (auto)" readonly disabled>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-bold text-muted small">CREATOR</label>
@@ -242,33 +330,50 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
       <div class="modal-header bg-primary text-white py-3 px-4">
-        <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Corp Task</h5>
+        <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Company Task</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
-      <form action="/corp-task/update/{{ t.id }}" method="POST">
+      <form action="/corp-task/update/{{ t.id }}" method="POST" class="editCorpTaskForm">
         <div class="modal-body p-4">
           <div class="mb-3">
-            <label class="form-label fw-bold text-muted small">NỘI DUNG TASK</label>
+            <label class="form-label fw-bold text-muted small">TASK CONTENT</label>
             <textarea name="title" class="form-control rounded-3" rows="3" required>{{ t.title }}</textarea>
           </div>
 
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">PHÒNG BAN</label>
+              <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
               <select name="department" class="form-select rounded-3" required>
                 {% for d in corp_departments %}
                   <option value="{{ d }}" {% if t.department == d %}selected{% endif %}>{{ d }}</option>
                 {% endfor %}
               </select>
             </div>
+
             <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">ASSIGNEE</label>
-              <select name="assigned_user_id" class="form-select rounded-3" required>
+              <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
+
+              {# Ensure assigned_to is treated as list (backend already normalizes) #}
+              {% set edit_assigned_ids = t.assigned_to | map('string') | list %}
+
+              <div class="border rounded-3 p-2" style="max-height:180px; overflow-y:auto;">
                 {% for u in users_list %}
-                  <option value="{{ u._id }}" {% if t.assigned_to|string == u._id|string %}selected{% endif %}>{{ u.username }}</option>
+                <div class="form-check">
+                  <input class="form-check-input"
+                         type="checkbox"
+                         name="assigned_user_ids"
+                         value="{{ u._id }}"
+                         id="edit_assign_{{ t.id }}_{{ u._id }}"
+                         {% if (u._id|string) in edit_assigned_ids %}checked{% endif %}>
+                  <label class="form-check-label" for="edit_assign_{{ t.id }}_{{ u._id }}">
+                    {{ u.username }}
+                  </label>
+                </div>
                 {% endfor %}
-              </select>
+              </div>
+
+              <small class="text-muted">Select one or multiple assignees</small>
             </div>
           </div>
 
@@ -300,15 +405,90 @@
       });
       const data = await res.json();
       if (data.status === 'success') location.reload();
-      else alert(data.message || 'Không thể cập nhật status');
+      else alert(data.message || 'Unable to update status');
     } catch(e) {
       console.error(e);
-      alert('Lỗi cập nhật status');
+      alert('Status update error');
     }
   }
+
+  // Frontend validation for checkbox group (Create + Edit)
+  (function () {
+    const addForm = document.getElementById('addCorpTaskForm');
+    if (addForm) {
+      addForm.addEventListener('submit', function (e) {
+        const checked = addForm.querySelectorAll('input[name="assigned_user_ids"]:checked');
+        if (!checked || checked.length === 0) {
+          e.preventDefault();
+          alert('Please select at least 1 assignee.');
+        }
+      });
+    }
+
+    const editForms = document.querySelectorAll('.editCorpTaskForm');
+    if (editForms && editForms.length) {
+      editForms.forEach(function (f) {
+        f.addEventListener('submit', function (e) {
+          const checked = this.querySelectorAll('input[name="assigned_user_ids"]:checked');
+          if (!checked || checked.length === 0) {
+            e.preventDefault();
+            alert('Please select at least 1 assignee.');
+          }
+        });
+      });
+    }
+  })();
 </script>
 
 <style>
   .table-hover tbody tr:hover { background-color: #f8faff !important; }
+
+  /* Brown for "Received" status */
+  .bg-brown {
+    background-color: #8b5e3c !important;
+    color: #fff !important;
+  }
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+  const _corpTasks = {{ corp_tasks_chart | tojson }};
+
+  function buildCorpStats(dept) {
+    let list = _corpTasks;
+    if (dept !== 'ALL') {
+      list = list.filter(t => t.department === dept);
+    }
+    const total = list.length;
+    const done = list.filter(t => t.status === 'Done').length;
+    const notDone = total - done;
+    return { total, done, notDone };
+  }
+
+  const ctx = document.getElementById('corpTaskChart');
+  if (ctx) {
+    let s = buildCorpStats('ALL');
+
+    document.getElementById('statTotal').innerText = s.total;
+    document.getElementById('statDone').innerText = s.done;
+    document.getElementById('statNotDone').innerText = s.notDone;
+
+    const chart = new Chart(ctx.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Done', 'Not Done'],
+        datasets: [{
+          data: [s.done, s.notDone],
+          backgroundColor: ['#198754', '#ffc107']
+        }]
+      },
+      options: {
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+
+  }
+</script>
+
 {% endblock %}

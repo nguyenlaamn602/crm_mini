@@ -2,23 +2,56 @@
 {% block title %}Leads - {{ sector_name }}{% endblock %}
 
 {% block content %}
+<style>
+    /* === UI NORMALIZE FOR LEADS TABLE (SAFE) === */
+    .leads-table td {
+        vertical-align: middle;
+    }
+
+    .lead-name,
+    .lead-id {
+        max-width: 220px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+    }
+
+    .badge-status {
+        min-width: 90px;
+        text-align: center;
+    }
+</style>
+
 <div class="container-fluid p-0">
+
     <!-- Header Section -->
     <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded-4 shadow-sm">
         <div class="d-flex align-items-center gap-3">
             <h4 class="mb-0 fw-bold text-dark">{{ sector_name }}</h4>
-            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#addLeadModal">
+            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm"
+                    data-bs-toggle="modal"
+                    data-bs-target="#addLeadModal">
                 <i class="bi bi-plus-lg me-1"></i> Add New
             </button>
         </div>
 
         <form action="/sector/{{ sector_id }}" method="GET" class="d-flex align-items-center gap-2">
             <div class="input-group input-group-sm rounded-3 overflow-hidden bg-light" style="width: 250px;">
-                <span class="input-group-text border-0 bg-transparent text-muted"><i class="bi bi-search"></i></span>
-                <input type="text" name="search" class="form-control border-0 bg-transparent" placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
+                <span class="input-group-text border-0 bg-transparent text-muted">
+                    <i class="bi bi-search"></i>
+                </span>
+                <input type="text"
+                       name="search"
+                       class="form-control border-0 bg-transparent"
+                       placeholder="Search customer name..."
+                       value="{{ request.args.get('search', '') }}">
             </div>
 
-            <select name="status" class="form-select form-select-sm border-0 bg-light rounded-3" style="width: 180px;" onchange="this.form.submit()">
+            <select name="status"
+                    class="form-select form-select-sm border-0 bg-light rounded-3"
+                    style="width: 180px;"
+                    onchange="this.form.submit()">
                 <option value="">-- All Statuses --</option>
                 <option value="Khách Mới" {% if request.args.get('status') == 'Khách Mới' %}selected{% endif %}>New Customer</option>
                 <option value="Khách hàng tiềm năng" {% if request.args.get('status') == 'Khách hàng tiềm năng' %}selected{% endif %}>Potential</option>
@@ -27,14 +60,17 @@
             </select>
 
             {% if request.args.get('search') or request.args.get('status') %}
-                <a href="/sector/{{ sector_id }}" class="btn btn-sm btn-link text-secondary text-decoration-none">Clear Filters</a>
+                <a href="/sector/{{ sector_id }}"
+                   class="btn btn-sm btn-link text-secondary text-decoration-none">
+                    Clear Filters
+                </a>
             {% endif %}
         </form>
     </div>
 
     <!-- Table Section -->
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-        <table class="table align-middle mb-0 table-hover">
+        <table class="table align-middle mb-0 table-hover leads-table">
             <thead class="bg-light text-secondary">
                 <tr>
                     <th class="ps-4 py-3">CUSTOMER</th>
@@ -49,12 +85,16 @@
                 {% for lead in leads %}
                 <tr>
                     <td class="ps-4">
-                        <!-- THÊM LINK VÀO TÊN KHÁCH HÀNG - ĐÃ ĐỔI MÀU SANG ĐEN -->
                         <a href="/customer/{{ lead.psid }}" class="text-decoration-none">
-                            <div class="fw-bold text-dark">{{ lead.full_name }}</div>
+                            <div class="fw-bold text-dark lead-name">
+                                {{ lead.full_name }}
+                            </div>
                         </a>
-                        <small class="text-muted" style="font-size: 0.7rem;">ID: {{ lead.psid }}</small>
+                        <small class="text-muted lead-id" style="font-size: 0.7rem;">
+                            ID: {{ lead.psid }}
+                        </small>
                     </td>
+
                     <td>
                         {% if lead.source_platform == 'Lark' %}
                             <span class="badge bg-success-subtle text-success border border-success-subtle px-2">Lark Base</span>
@@ -64,24 +104,45 @@
                             <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2">Manual</span>
                         {% endif %}
                     </td>
+
+                    <!-- PHONE NUMBER: GIỮ NGUYÊN LOGIC -->
                     <td>
                         <span class="badge bg-light text-dark border px-2 py-2 fw-normal">
                             {{ lead.phone_number if lead.phone_number != 'N/A' else 'None' }}
                         </span>
                     </td>
+
                     <td class="text-center">
-                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill">{{ lead.status }}</span>
+                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill badge-status">
+                            {{ lead.status }}
+                        </span>
                     </td>
-                    <td class="pe-4 text-end text-muted small">{{ lead.updated_at.strftime('%H:%M %d/%m') }}</td>
+
+                    <td class="pe-4 text-end text-muted small">
+                        {{ lead.updated_at.strftime('%H:%M %d/%m') }}
+                    </td>
+
                     <td class="pe-4 text-end">
-                        <a href="/customer/{{ lead.psid }}" class="btn btn-link text-primary p-0 me-2"><i class="bi bi-pencil-square fs-5"></i></a>
-                        <form action="/customer/delete/{{ lead.psid }}" method="POST" onsubmit="return confirm('Delete this customer?');" style="display:inline;">
-                            <button type="submit" class="btn btn-link text-danger p-0"><i class="bi bi-trash fs-5"></i></button>
+                        <a href="/customer/{{ lead.psid }}"
+                           class="btn btn-link text-primary p-0 me-2">
+                            <i class="bi bi-pencil-square fs-5"></i>
+                        </a>
+                        <form action="/customer/delete/{{ lead.psid }}"
+                              method="POST"
+                              onsubmit="return confirm('Delete this customer?');"
+                              style="display:inline;">
+                            <button type="submit" class="btn btn-link text-danger p-0">
+                                <i class="bi bi-trash fs-5"></i>
+                            </button>
                         </form>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="6" class="text-center py-5 text-muted">No customers found.</td></tr>
+                <tr>
+                    <td colspan="6" class="text-center py-5 text-muted">
+                        No customers found.
+                    </td>
+                </tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -96,16 +157,19 @@
                 <h5 class="modal-title fw-bold">Create New Customer</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+
             <form action="/customer/add" method="POST">
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">FULL NAME</label>
                         <input type="text" name="full_name" class="form-control rounded-3" required>
                     </div>
+
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">PHONE NUMBER</label>
                         <input type="text" name="phone_number" class="form-control rounded-3">
                     </div>
+
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label small fw-bold text-muted">SECTOR</label>
@@ -115,6 +179,7 @@
                                 <option value="Warehouse" {% if sector_id == 'Warehouse' %}selected{% endif %}>Warehouse</option>
                             </select>
                         </div>
+
                         <div class="col-md-6 mb-3">
                             <label class="form-label small fw-bold text-muted">STATUS</label>
                             <select name="status" class="form-select rounded-3">
@@ -126,9 +191,17 @@
                         </div>
                     </div>
                 </div>
+
                 <div class="modal-footer border-0 pb-4 pe-4">
-                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary rounded-pill px-4">Create Customer</button>
+                    <button type="button"
+                            class="btn btn-light rounded-pill px-4"
+                            data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="btn btn-primary rounded-pill px-4">
+                        Create Customer
+                    </button>
                 </div>
             </form>
         </div>

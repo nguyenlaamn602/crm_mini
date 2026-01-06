@@ -3,12 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+    <!-- Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <title>{% block title %}THG CRM{% endblock %}</title>
+
+    <title>{% block title %}HUB THG{% endblock %}</title>
 
     <style>
         :root {
@@ -26,19 +31,26 @@
             overflow-x: hidden;
         }
 
-        .sidebar {
-            width: var(--sidebar-width);
-            height: 100vh;
-            position: fixed;
-            left: 0; top: 0;
-            background: var(--sidebar-bg);
-            border-right: 1px solid #e2e8f0;
-            padding: 1.25rem;
-            z-index: 1000;
-            transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            flex-direction: column;
-        }
+.sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid #e2e8f0;
+    padding: 1.25rem;
+    z-index: 1000;
+
+    display: flex;
+    flex-direction: column;
+
+    overflow-y: auto;        /* ✅ CHO SCROLL */
+    overflow-x: hidden;      /* ✅ KHÔNG TRÀN NGANG */
+
+    transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 
         .sidebar.collapsed {
             width: var(--sidebar-collapsed-width);
@@ -69,7 +81,10 @@
             margin-right: auto;
         }
 
-        .toggle-btn:hover { background: var(--primary-color); color: #fff; }
+        .toggle-btn:hover {
+            background: var(--primary-color);
+            color: #fff;
+        }
 
         .brand {
             font-size: 1.25rem;
@@ -100,14 +115,26 @@
             margin-right: 12px;
         }
 
-        .sidebar.collapsed .nav-link i { margin-right: 0; }
+        .sidebar.collapsed .nav-link i {
+            margin-right: 0;
+        }
+
         .sidebar.collapsed .nav-text,
         .sidebar.collapsed .brand-text,
         .sidebar.collapsed .section-title,
-        .sidebar.collapsed .user-details { display: none; }
+        .sidebar.collapsed .user-details {
+            display: none;
+        }
 
-        .nav-link:hover { background: #f1f5f9; color: var(--primary-color); }
-        .nav-link.active { background: var(--primary-color); color: #fff; }
+        .nav-link:hover {
+            background: #f1f5f9;
+            color: var(--primary-color);
+        }
+
+        .nav-link.active {
+            background: var(--primary-color);
+            color: #fff;
+        }
 
         .section-title {
             color: #94a3b8;
@@ -133,7 +160,8 @@
         }
 
         .avatar {
-            width: 32px; height: 32px;
+            width: 32px;
+            height: 32px;
             background: var(--primary-color);
             color: #fff;
             border-radius: 8px;
@@ -146,15 +174,17 @@
 </head>
 
 <body>
+
 <div class="sidebar" id="sidebar">
 
     <button class="toggle-btn" id="sidebar-toggle">
         <i class="bi bi-chevron-left" id="toggle-icon"></i>
     </button>
 
+    <!-- BRAND -->
     <a href="/" class="brand">
         <i class="bi bi-cpu-fill"></i>
-        <span class="brand-text">THG CRM</span>
+        <span class="brand-text">HUB THG</span>
     </a>
 
     <div class="nav flex-column mb-auto">
@@ -165,35 +195,41 @@
             <span class="nav-text">Dashboard</span>
         </a>
 
-        <div class="section-title">Main Sectors</div>
+        <!-- LEADS -->
+        <div class="section-title">Leads</div>
 
         <a href="/sector/Pod_Drop" class="nav-link {% if sector_id == 'Pod_Drop' %}active{% endif %}">
             <i class="bi bi-box-seam"></i>
-            <span class="nav-text">Pod / Drop</span>
+            <span class="nav-text">POD / Dropship</span>
         </a>
+
         <a href="/sector/Express" class="nav-link {% if sector_id == 'Express' %}active{% endif %}">
             <i class="bi bi-lightning-charge"></i>
             <span class="nav-text">Express</span>
         </a>
+
         <a href="/sector/Warehouse" class="nav-link {% if sector_id == 'Warehouse' %}active{% endif %}">
             <i class="bi bi-house-door"></i>
             <span class="nav-text">Warehouse</span>
         </a>
 
-        <div class="section-title">Operations</div>
+        <!-- TASKS -->
+        <div class="section-title">Tasks</div>
 
         <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}">
             <i class="bi bi-clipboard-check"></i>
-            <span class="nav-text">Task Management</span>
+            <span class="nav-text">My Tasks</span>
         </a>
 
         <a href="/corp-tasks" class="nav-link {% if request.path.startswith('/corp-tasks') %}active{% endif %}">
             <i class="bi bi-building"></i>
-            <span class="nav-text">Task Tổng công ty</span>
+            <span class="nav-text">Corporate Tasks</span>
         </a>
 
-        <!-- ✅ NEW: PANCAKE BROADCAST (ADMIN ONLY) -->
+        <!-- OPERATIONS -->
         {% if current_user.role == 'admin' %}
+        <div class="section-title">Operations</div>
+
         <a href="/pancake/broadcast"
            class="nav-link {% if request.path.startswith('/pancake/broadcast') %}active{% endif %}">
             <i class="bi bi-megaphone-fill"></i>
@@ -201,6 +237,7 @@
         </a>
         {% endif %}
 
+        <!-- ADMIN -->
         {% if current_user.role == 'admin' %}
         <div class="section-title">Administration</div>
 
@@ -209,15 +246,19 @@
             <span class="nav-text">User Management</span>
         </a>
         {% endif %}
+
     </div>
 
+    <!-- USER -->
     {% if current_user.is_authenticated %}
     <div class="user-section">
         <div class="user-profile-brief">
             <div class="avatar">{{ current_user.username[0].upper() }}</div>
             <div class="user-details ms-3">
                 <div class="fw-bold small">{{ current_user.username }}</div>
-                <div class="text-muted" style="font-size:0.65rem;">{{ current_user.role.upper() }}</div>
+                <div class="text-muted" style="font-size:0.65rem;">
+                    {{ current_user.role.upper() }}
+                </div>
             </div>
         </div>
 
@@ -234,6 +275,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
     const sidebar = document.getElementById('sidebar');
     const mainContent = document.getElementById('main-content');
@@ -243,7 +285,9 @@
     function updateUI(collapsed) {
         sidebar.classList.toggle('collapsed', collapsed);
         mainContent.classList.toggle('expanded', collapsed);
-        toggleIcon.className = collapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+        toggleIcon.className = collapsed
+            ? 'bi bi-chevron-right'
+            : 'bi bi-chevron-left';
     }
 
     const saved = localStorage.getItem('sidebar-collapsed') === 'true';
@@ -255,5 +299,6 @@
         localStorage.setItem('sidebar-collapsed', collapsed);
     };
 </script>
+
 </body>
 </html>

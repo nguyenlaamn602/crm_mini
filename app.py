@@ -121,7 +121,17 @@ def allowed_next_status(task_doc):
 def can_update_corp_status(corp_task):
     if current_user.role == "admin":
         return True
-    return corp_task.get("assigned_to") == ObjectId(current_user.id)
+
+    assigned = corp_task.get("assigned_to")
+
+    # THG FIX: support legacy single assignee (ObjectId) and new list
+    if isinstance(assigned, ObjectId):
+        return ObjectId(current_user.id) == assigned
+
+    if isinstance(assigned, list):
+        return ObjectId(current_user.id) in assigned
+
+    return False
 
 def can_edit_corp_task(corp_task):
     return current_user.role == "admin"
@@ -431,7 +441,6 @@ def update_customer(psid):
         return jsonify({"status": "success"})
     return redirect(url_for('view_customer_detail', psid=psid))
 
-# ✅ ADD CUSTOMER (Manual)
 @app.route('/customer/add', methods=['POST'])
 @login_required
 def add_customer():
@@ -695,7 +704,7 @@ def view_corp_tasks():
 
     q = {}
     if current_user.role != 'admin':
-        q["assigned_to"] = ObjectId(current_user.id)
+        q["assigned_to"] = {"$in": [ObjectId(current_user.id)]}
 
     if dept:
         q["department"] = dept
@@ -704,21 +713,46 @@ def view_corp_tasks():
     if search:
         q["$or"] = [
             {"title": {"$regex": search, "$options": "i"}},
-            {"assignee": {"$regex": search, "$options": "i"}},
+            {"assignees": {"$regex": search, "$options": "i"}},
             {"department": {"$regex": search, "$options": "i"}}
         ]
 
     corp_tasks = list(db.corp_tasks.find(q).sort("updated_at", -1))
-    users_list = list(db.users.find({}, {"username": 1, "_id": 1})) if current_user.role == 'admin' else []
+
+    # ===== NORMALIZE TASK DATA (UI) =====
+    for t in corp_tasks:
+        if isinstance(t.get("assigned_to"), ObjectId):
+            t["assigned_to"] = [t["assigned_to"]]
+
+        if "assignees" not in t:
+            t["assignees"] = [t["assignee"]] if t.get("assignee") else []
+
+    users_list = (
+        list(db.users.find({}, {"username": 1, "_id": 1}))
+        if current_user.role == 'admin'
+        else []
+    )
+
+    # ===== SERIALIZE FOR CHART (NO ObjectId) =====
+    corp_tasks_chart = []
+    for t in corp_tasks:
+        corp_tasks_chart.append({
+            "id": t.get("id"),
+            "title": t.get("title"),
+            "department": t.get("department"),
+            "status": t.get("status"),
+        })
 
     return render_template(
         'corp_tasks.html',
-        corp_tasks=corp_tasks,
+        corp_tasks=corp_tasks,                
+        corp_tasks_chart=corp_tasks_chart,     
         corp_departments=CORP_DEPARTMENTS,
         corp_statuses=CORP_STATUSES,
         corp_status_labels=CORP_STATUS_LABELS,
         users_list=users_list
     )
+
 
 @app.route('/corp-task/add', methods=['POST'])
 @login_required
@@ -729,27 +763,34 @@ def add_corp_task():
     cid = 'corp_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
-    assigned_user_id = request.form.get('assigned_user_id')
+    assigned_user_ids = request.form.getlist('assigned_user_ids')
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
-    if not title or department not in CORP_DEPARTMENTS or not assigned_user_id or not due_at:
-        flash('Thiếu thông tin khi tạo corp task', 'danger')
+    if not title or department not in CORP_DEPARTMENTS or not assigned_user_ids or not due_at:
+        flash('Missing required fields when creating company task', 'danger')
         return redirect(url_for('view_corp_tasks'))
 
-    u = db.users.find_one({"_id": ObjectId(assigned_user_id)})
-    if not u:
-        flash('Assignee không tồn tại', 'danger')
+    users = list(db.users.find({
+        "_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}
+    }))
+
+    if not users:
+        flash('Assignee not found', 'danger')
         return redirect(url_for('view_corp_tasks'))
 
-    assigned_to_oid = u["_id"]
-    notify_pending = (assigned_to_oid != ObjectId(current_user.id))
+    assigned_to_oids = [u["_id"] for u in users]
+    assignees = [u.get("username", "user") for u in users]
 
     db.corp_tasks.insert_one({
         "id": cid,
         "title": title,
         "department": department,
-        "assigned_to": assigned_to_oid,
-        "assignee": u.get("username", "user"),
+
+        # ✅ MULTI ASSIGNEE (NEW)
+        "assigned_to": assigned_to_oids,
+        "assignees": assignees,
+        "assignee": assignees[0],  # backward compatible
+
         "status": "Unreceived",
         "due_at": due_at,
 
@@ -759,9 +800,10 @@ def add_corp_task():
         "assigned_by_role": current_user.role,
         "assigned_at": now_dt(),
 
-        "notify_pending": True if notify_pending else False,
+        "notify_pending": True,
         "notified_at": None
     })
+
     return redirect(url_for('view_corp_tasks'))
 
 @app.route('/corp-task/update/<id>', methods=['POST'])
@@ -775,28 +817,44 @@ def update_corp_task(id):
 
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
-    assigned_user_id = request.form.get('assigned_user_id')
+    assigned_user_ids = request.form.getlist('assigned_user_ids')
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
-    if not title or department not in CORP_DEPARTMENTS or not assigned_user_id or not due_at:
+    if not title or department not in CORP_DEPARTMENTS or not assigned_user_ids or not due_at:
         flash('Thiếu thông tin khi update corp task', 'danger')
         return redirect(url_for('view_corp_tasks'))
-
-    u = db.users.find_one({"_id": ObjectId(assigned_user_id)})
-    if not u:
+    users = list(db.users.find({
+        "_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}
+    }))
+    if not users:
         flash('Assignee không tồn tại', 'danger')
         return redirect(url_for('view_corp_tasks'))
+
+    assigned_to_oids = [u["_id"] for u in users]
+    assignees = [u.get("username", "user") for u in users]
+    first_name = assignees[0] if assignees else "user"
+
+    old_assigned = t.get("assigned_to")
+    if isinstance(old_assigned, list):
+        old_set = set([str(x) for x in old_assigned])
+    elif isinstance(old_assigned, ObjectId):
+        old_set = set([str(old_assigned)])
+    else:
+        old_set = set()
+
+    new_set = set([str(x) for x in assigned_to_oids])
 
     upd = {
         "title": title,
         "department": department,
-        "assigned_to": u["_id"],
-        "assignee": u.get("username", "user"),
+        "assigned_to": assigned_to_oids,
+        "assignees": assignees,
+        "assignee": first_name,
         "due_at": due_at,
         "updated_at": now_dt()
     }
 
-    if u["_id"] != t.get("assigned_to"):
+    if new_set != old_set:
         upd["notify_pending"] = True
         upd["assigned_by"] = current_user.username
         upd["assigned_by_role"] = current_user.role

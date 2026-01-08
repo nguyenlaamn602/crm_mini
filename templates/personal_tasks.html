@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}My Personal Tasks{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+
+  <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-4 rounded-4 shadow-sm">
+    <div>
+      <h4 class="fw-bold">My Personal Tasks</h4>
+      <button class="btn btn-primary btn-sm rounded-pill mt-2"
+              data-bs-toggle="modal"
+              data-bs-target="#addPersonalTask">
+        <i class="bi bi-plus-lg"></i> Add Task
+      </button>
+    </div>
+
+    <form class="d-flex gap-2">
+      <input type="text" name="search" class="form-control form-control-sm"
+             placeholder="Search task..."
+             value="{{ request.args.get('search','') }}">
+
+      <select name="status" class="form-select form-select-sm"
+              onchange="this.form.submit()">
+        <option value="">All</option>
+        <option value="Not_yet">Not yet</option>
+        <option value="Done">Done</option>
+        <option value="Missed">Missed</option>
+      </select>
+    </form>
+  </div>
+
+  <div class="card border-0 shadow-sm rounded-4">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="bg-light">
+          <tr>
+            <th>#</th>
+            <th>Task</th>
+            <th>Deadline</th>
+            <th class="text-center">Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td class="fw-semibold">{{ t.title }}</td>
+            <td>
+              {{ t.due_at.strftime('%d/%m %H:%M') if t.due_at else '—' }}
+            </td>
+            <td class="text-center">
+  <button class="btn p-0 border-0 shadow-none status-toggle-btn"
+          onclick="togglePersonalTaskStatus(this, '{{ t.id }}', '{{ t.status }}')">
+    {% if t.status == 'Done' %}
+      <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">Done</span>
+    {% elif t.status == 'Missed' %}
+      <span class="badge bg-danger-subtle text-danger rounded-pill px-3 py-2">Missed</span>
+    {% else %}
+      <span class="badge bg-info-subtle text-info rounded-pill px-3 py-2">Not yet</span>
+    {% endif %}
+  </button>
+</td>
+
+            <td class="text-end">
+              <form action="/personal-task/delete/{{ t.id }}" method="POST"
+                    onsubmit="return confirm('Delete this task?')">
+                <button class="btn btn-link text-danger">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MODAL -->
+<div class="modal fade" id="addPersonalTask">
+  <div class="modal-dialog modal-dialog-centered">
+    <form class="modal-content" method="POST" action="/personal-task/add">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Personal Task</h5>
+      </div>
+      <div class="modal-body">
+        <input name="title" class="form-control mb-3"
+               placeholder="Task title" required>
+        <textarea name="description" class="form-control mb-3"
+                  placeholder="Description (optional)"></textarea>
+        <input type="datetime-local" name="due_at" class="form-control">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function togglePersonalStatus(id) {
+  fetch(`/personal-task/quick-update/${id}`, { method: 'POST' })
+    .then(() => location.reload());
+}
+</script>
+
+<script>
+async function togglePersonalTaskStatus(button, taskId, currentStatus) {
+    let nextStatus = 'Not_yet';
+    if (currentStatus === 'Not_yet') nextStatus = 'Done';
+    else if (currentStatus === 'Done') nextStatus = 'Missed';
+    else nextStatus = 'Not_yet';
+
+    button.style.opacity = '0.5';
+    button.disabled = true;
+
+    try {
+        const res = await fetch(`/personal-task/quick-update/${taskId}`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const result = await res.json();
+        if (result.status === 'success') location.reload();
+    } catch (e) {
+        console.error(e);
+        button.style.opacity = '1';
+        button.disabled = false;
+    }
+}
+</script>
+
+
+{% endblock %}

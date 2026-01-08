@@ -116,6 +116,36 @@ def allowed_next_status(task_doc):
     return "Done"
 
 # ---------------------------
+# Helpers (Personal Task)
+# ---------------------------
+
+def next_personal_status(cur):
+    if cur == "Not_yet":
+        return "Done"
+    if cur == "Done":
+        return "Missed"
+    return "Not_yet"
+
+def auto_mark_personal_tasks():
+    now = now_dt()
+    overdue = db.personal_tasks.find({
+        "status": "Not_yet",
+        "due_at": {"$ne": None, "$lt": now}
+    })
+
+    for t in overdue:
+        db.personal_tasks.update_one(
+            {"id": t["id"]},
+            {"$set": {
+                "status": "Missed",
+                "updated_at": now,
+                "missed_notify_pending": True
+            }}
+        )
+
+
+
+# ---------------------------
 # Corp Task permissions + transitions
 # ---------------------------
 def can_update_corp_status(corp_task):
@@ -351,6 +381,7 @@ def auto_mark_missed_tasks():
     except Exception as e:
         print("[TASK] auto_mark_missed_tasks error:", repr(e))
 
+
 # ---------------------------
 # AUTH
 # ---------------------------
@@ -392,7 +423,8 @@ def index():
         "pod_drop": db.leads.count_documents({"sector": "Pod_Drop"}),
         "express": db.leads.count_documents({"sector": "Express"}),
         "warehouse": db.leads.count_documents({"sector": "Warehouse"}),
-        "total_staff": db.users.count_documents({})
+        "total_staff": db.users.count_documents({}),
+        "personal_tasks": db.personal_tasks.count_documents({"user_id": ObjectId(current_user.id),"status": {"$ne": "Done"}})
     }
     return render_template('pages.html', stats=stats)
 
@@ -693,6 +725,110 @@ def delete_task(id):
     return redirect(request.referrer or url_for('view_tasks'))
 
 # ---------------------------
+# Personal Tasks
+# ---------------------------
+@app.route('/personal-tasks')
+@login_required
+def view_personal_tasks():
+    q = {
+        "user_id": ObjectId(current_user.id)
+    }
+
+    status = request.args.get('status')
+    search = request.args.get('search')
+
+    if status:
+        q["status"] = status
+
+    if search:
+        q["title"] = {"$regex": search, "$options": "i"}
+
+    tasks = list(
+        db.personal_tasks
+        .find(q)
+        .sort("updated_at", -1)
+    )
+
+    return render_template(
+        "personal_tasks.html",
+        tasks=tasks
+    )
+
+
+@app.route('/personal-task/add', methods=['POST'])
+@login_required
+def add_personal_task():
+    tid = 'ptask_' + ''.join(
+        random.choices(string.ascii_lowercase + string.digits, k=8)
+    )
+
+    title = (request.form.get("title") or "").strip()
+    if not title:
+        return redirect(url_for("view_personal_tasks"))
+
+    due_at = parse_due_at(request.form.get("due_at"))
+
+    db.personal_tasks.insert_one({
+        "id": tid,
+        "title": title,
+        "description": request.form.get("description"),
+
+        "status": "Not_yet",
+        "due_at": due_at,
+
+        "user_id": ObjectId(current_user.id),
+
+        "created_at": now_dt(),
+        "updated_at": now_dt(),
+
+        "notify_pending": False,
+        "missed_notify_pending": False
+    })
+
+    return redirect(url_for("view_personal_tasks"))
+
+
+@app.route('/personal-task/quick-update/<id>', methods=['POST'])
+@login_required
+def quick_update_personal_task(id):
+    t = db.personal_tasks.find_one({
+        "id": id,
+        "user_id": ObjectId(current_user.id)
+    })
+
+    if not t:
+        return jsonify({"status": "not_found"}), 404
+
+    next_status = next_personal_status(t.get("status", "Not_yet"))
+
+    upd = {
+        "status": next_status,
+        "updated_at": now_dt()
+    }
+
+    if next_status == "Missed":
+        upd["missed_notify_pending"] = True
+
+    db.personal_tasks.update_one(
+        {"id": id},
+        {"$set": upd}
+    )
+
+    return jsonify({"status": "success", "next": next_status})
+
+
+@app.route('/personal-task/delete/<id>', methods=['POST'])
+@login_required
+def delete_personal_task(id):
+    db.personal_tasks.delete_one({
+        "id": id,
+        "user_id": ObjectId(current_user.id)
+    })
+    return redirect(url_for("view_personal_tasks"))
+
+
+
+# ---------------------------
 # ✅ Task Tổng công ty
 # ---------------------------
 @app.route('/corp-tasks')
@@ -906,6 +1042,9 @@ def api_notifications():
     q2 = {"assigned_to": me, "notify_pending": True, "status": {"$ne": "Done"}}
     items2 = list(db.corp_tasks.find(q2).sort("assigned_at", -1).limit(10))
 
+    q3 = {"user_id": me, "notify_pending": True, "status": {"$ne": "Done"}}
+    items3 = list(db.personal_tasks.find(q3).sort("created_at", -1).limit(5))
+
     def fmt_task(x):
         due = x.get("due_at")
         return {
@@ -929,9 +1068,23 @@ def api_notifications():
             "assigned_at": x.get("assigned_at").strftime("%d/%m %H:%M") if x.get("assigned_at") else "",
             "due_at": due.strftime("%d/%m %H:%M") if due else ""
         }
+    
+    def fmt_personal(x):
+        due = x.get("due_at")
+        return {
+            "id": x.get("id"),
+            "kind": "personal",
+            "todo_content": x.get("title"),
+            "customer_name": "",
+            "assigned_by": "Self",
+            "assigned_at": x.get("created_at").strftime("%d/%m %H:%M"),
+            "due_at": due.strftime("%d/%m %H:%M") if due else ""
+        }
 
     merged = [fmt_task(i) for i in items1] + [fmt_corp(i) for i in items2]
     merged = sorted(merged, key=lambda z: z.get("assigned_at", ""), reverse=True)[:15]
+    merged = ([fmt_task(i) for i in items1] +[fmt_corp(i) for i in items2] +[fmt_personal(i) for i in items3])
+
     return jsonify({"items": merged})
 
 @app.route('/api/notifications/ack', methods=['POST'])
@@ -953,6 +1106,11 @@ def api_notifications_ack():
         {"id": {"$in": ids}, "assigned_to": me},
         {"$set": {"notify_pending": False, "notified_at": now, "updated_at": now}}
     )
+    db.personal_tasks.update_many(
+    {"id": {"$in": ids}, "user_id": me},
+    {"$set": {"notify_pending": False, "updated_at": now}}
+    )
+
     return jsonify({"status": "success"})
 
 # ---------------------------
@@ -1024,18 +1182,105 @@ def admin_user_detail(user_id):
     if current_user.role != 'admin':
         return redirect(url_for('index'))
 
-    u = db.users.find_one({"_id": ObjectId(user_id)})
+    uid = ObjectId(user_id)
+
+    u = db.users.find_one({"_id": uid})
     if not u:
         return redirect(url_for('admin_users'))
 
-    s = {
-        "total": db.tasks.count_documents({"assigned_to": ObjectId(user_id)}),
-        "done": db.tasks.count_documents({"assigned_to": ObjectId(user_id), "status": "Done"}),
-        "not_yet": db.tasks.count_documents({"assigned_to": ObjectId(user_id), "status": "Not_yet"}),
-        "missed": db.tasks.count_documents({"assigned_to": ObjectId(user_id), "status": "Missed"})
+    # =========================
+    # CUSTOMER TASKS
+    # =========================
+    task_q = {"assigned_to": uid}
+
+    stats_tasks = {
+        "total": db.tasks.count_documents(task_q),
+        "done": db.tasks.count_documents({**task_q, "status": "Done"}),
+        "not_yet": db.tasks.count_documents({**task_q, "status": "Not_yet"}),
+        "missed": db.tasks.count_documents({**task_q, "status": "Missed"}),
     }
-    tasks = list(db.tasks.find({"assigned_to": ObjectId(user_id)}).sort("updated_at", -1))
-    return render_template('user_detail.html', staff=u, stats=s, tasks=tasks)
+
+    tasks = list(
+        db.tasks.find(task_q).sort("updated_at", -1)
+    )
+
+    # =========================
+    # PERSONAL TASKS
+    # =========================
+    ptask_q = {"user_id": uid}
+
+    stats_personal = {
+        "total": db.personal_tasks.count_documents(ptask_q),
+        "done": db.personal_tasks.count_documents({**ptask_q, "status": "Done"}),
+        "not_yet": db.personal_tasks.count_documents({**ptask_q, "status": "Not_yet"}),
+        "missed": db.personal_tasks.count_documents({**ptask_q, "status": "Missed"}),
+    }
+
+    personal_tasks = list(
+        db.personal_tasks.find(ptask_q).sort("updated_at", -1)
+    )
+
+    # =========================
+    # COMPANY / CORP TASKS
+    # =========================
+    corp_q = {"assigned_to": {"$in": [uid]}}
+
+    stats_corp = {
+        "total": db.corp_tasks.count_documents(corp_q),
+        "done": db.corp_tasks.count_documents({**corp_q, "status": "Done"}),
+        # Corp task không có Missed – tất cả trạng thái chưa Done coi là Not yet
+        "not_yet": db.corp_tasks.count_documents({
+            **corp_q,
+            "status": {"$nin": ["Done", "Cancelled"]}
+        }),
+        "missed": 0
+    }
+
+    corp_tasks = list(
+        db.corp_tasks.find(corp_q).sort("updated_at", -1)
+    )
+
+    # =========================
+    # MERGED STATS (ALL TASKS)
+    # =========================
+    stats = {
+        "total": (
+            stats_tasks["total"]
+            + stats_personal["total"]
+            + stats_corp["total"]
+        ),
+        "done": (
+            stats_tasks["done"]
+            + stats_personal["done"]
+            + stats_corp["done"]
+        ),
+        "not_yet": (
+            stats_tasks["not_yet"]
+            + stats_personal["not_yet"]
+            + stats_corp["not_yet"]
+        ),
+        "missed": (
+            stats_tasks["missed"]
+            + stats_personal["missed"]
+        ),
+    }
+
+    task_breakdown = {
+        "customer": stats_tasks,
+        "personal": stats_personal,
+        "corp": stats_corp
+    }
+
+    return render_template(
+        'user_detail.html',
+        staff=u,
+        stats=stats,
+        tasks=tasks,
+        personal_tasks=personal_tasks,
+        corp_tasks=corp_tasks,
+        task_breakdown=task_breakdown
+    )
+
 
 @app.route('/admin/user/update_role/<user_id>', methods=['POST'])
 @login_required
@@ -1239,6 +1484,8 @@ if __name__ == '__main__':
         scheduler.add_job(id='l_tasks', func=sync_lark_tasks_task, trigger='interval', seconds=60)
 
         scheduler.add_job(id='auto_missed', func=auto_mark_missed_tasks, trigger='interval', seconds=60)
+        scheduler.add_job(id='auto_missed_personal', func=auto_mark_personal_tasks, trigger='interval', seconds=60)
+
 
         scheduler.start()
 

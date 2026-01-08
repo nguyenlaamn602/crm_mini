@@ -216,9 +216,15 @@
         <!-- TASKS -->
         <div class="section-title">Tasks</div>
 
+        <a href="/personal-tasks"
+   class="nav-link {% if request.path.startswith('/personal-tasks') %}active{% endif %}">
+    <i class="bi bi-person-check"></i>
+    <span class="nav-text">My Tasks</span>
+</a>
+
         <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}">
             <i class="bi bi-clipboard-check"></i>
-            <span class="nav-text">My Tasks</span>
+            <span class="nav-text">Customers Tasks</span>
         </a>
 
         <a href="/corp-tasks" class="nav-link {% if request.path.startswith('/corp-tasks') %}active{% endif %}">

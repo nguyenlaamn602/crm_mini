@@ -1,106 +1,235 @@
 {% extends "base.html" %}
-{% block title %}Hiệu suất - {{ staff.username }}{% endblock %}
+{% block title %}Performance - {{ staff.username }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid p-0">
-    <div class="mb-4 d-flex align-items-center gap-3">
-        <a href="/admin/users" class="btn btn-light rounded-circle shadow-sm"><i class="bi bi-arrow-left"></i></a>
-        <div>
-            <h4 class="fw-bold mb-0">Dashboard: {{ staff.username }}</h4>
-            <span class="badge bg-primary rounded-pill small">Staff Insights</span>
+
+  <!-- HEADER -->
+  <div class="mb-4 d-flex align-items-center gap-3">
+    <a href="/admin/users" class="btn btn-light rounded-circle shadow-sm">
+      <i class="bi bi-arrow-left"></i>
+    </a>
+    <div>
+      <h4 class="fw-bold mb-0">Dashboard: {{ staff.username }}</h4>
+      <span class="badge bg-primary rounded-pill small">Staff Insights</span>
+    </div>
+  </div>
+
+  <!-- FILTER BUTTONS -->
+  <div class="mb-3 d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3"
+            onclick="filterTaskByType('ALL')">All</button>
+
+    <button class="btn btn-sm btn-outline-primary rounded-pill px-3"
+            onclick="filterTaskByType('Customer Tasks')">Customer</button>
+
+    <button class="btn btn-sm btn-outline-success rounded-pill px-3"
+            onclick="filterTaskByType('Personal Tasks')">Personal</button>
+
+    <button class="btn btn-sm btn-outline-warning rounded-pill px-3"
+            onclick="filterTaskByType('Company Tasks')">Company</button>
+  </div>
+
+  <!-- STATS + CHART -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-8">
+      <div class="row g-4">
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
+            <div class="text-muted small fw-bold mb-1">TOTAL TASKS</div>
+            <div class="h2 fw-bold text-primary">{{ stats.total }}</div>
+          </div>
         </div>
+
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-success border-4">
+            <div class="text-muted small fw-bold mb-1 text-success">DONE</div>
+            <div class="h2 fw-bold text-success">{{ stats.done }}</div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-warning border-4">
+            <div class="text-muted small fw-bold mb-1 text-warning">NOT YET</div>
+            <div class="h2 fw-bold text-warning">{{ stats.not_yet }}</div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-danger border-4">
+            <div class="text-muted small fw-bold mb-1 text-danger">MISSED</div>
+            <div class="h2 fw-bold text-danger">{{ stats.missed }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="row g-4 mb-4">
-        <div class="col-md-8">
-            <div class="row g-4">
-                <div class="col-md-6">
-                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
-                        <div class="text-muted small fw-bold mb-1">TỔNG TASK</div>
-                        <div class="h2 fw-bold text-primary">{{ stats.total }}</div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-success border-4">
-                        <div class="text-muted small fw-bold mb-1 text-success">ĐÃ XONG</div>
-                        <div class="h2 fw-bold text-success">{{ stats.done }}</div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-warning border-4">
-                        <div class="text-muted small fw-bold mb-1 text-warning">CHƯA XONG</div>
-                        <div class="h2 fw-bold text-warning">{{ stats.not_yet }}</div>
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-danger border-4">
-                        <div class="text-muted small fw-bold mb-1 text-danger">TRỄ HẠN (MISSED)</div>
-                        <div class="h2 fw-bold text-danger">{{ stats.missed }}</div>
-                    </div>
-                </div>
-            </div>
+    <div class="col-md-4">
+      <div class="card border-0 shadow-sm rounded-4 p-4 bg-white h-100 d-flex flex-column align-items-center justify-content-center">
+        <h6 class="fw-bold mb-4">Task Distribution</h6>
+        <div style="width:220px;height:220px">
+          <canvas id="performanceChart"></canvas>
         </div>
-
-        <div class="col-md-4">
-            <div class="card border-0 shadow-sm rounded-4 p-4 bg-white h-100 d-flex flex-column align-items-center justify-content-center">
-                <h6 class="fw-bold mb-4">Phân bổ công việc</h6>
-                <div style="width: 220px; height: 220px;">
-                    <canvas id="performanceChart"></canvas>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
+  </div>
 
-    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0">
-                <thead class="bg-light small text-muted">
-                    <tr>
-                        <th class="ps-4">Nội dung</th>
-                        <th>Khách hàng</th>
-                        <th class="text-center">Trạng thái</th>
-                        <th class="pe-4 text-end">Cập nhật</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for t in tasks %}
-                    <tr>
-                        <td class="ps-4 fw-medium">{{ t.todo_content }}</td>
-                        <td class="small">{{ t.customer_name or '---' }}</td>
-                        <td class="text-center">
-                            <span class="badge {% if t.status == 'Done' %}bg-success-subtle text-success{% elif t.status == 'Missed' %}bg-danger-subtle text-danger{% else %}bg-warning-subtle text-warning{% endif %} rounded-pill px-3">
-                                {{ t.status }}
-                            </span>
-                        </td>
-                        <td class="pe-4 text-end text-muted small">{{ t.updated_at.strftime('%H:%M %d/%m') if t.updated_at else '---' }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+  <!-- CUSTOMER TASKS -->
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" data-task-table="Customer Tasks">
+    <div class="p-3 fw-bold">Customer Tasks</div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="bg-light small text-muted">
+          <tr>
+            <th class="ps-4">No</th>
+            <th>Content</th>
+            <th class="text-center">Status</th>
+            <th class="pe-4 text-end">Deadline</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+          <tr data-task-type="Customer Tasks">
+            <td class="ps-4">{{ loop.index }}</td>
+            <td>{{ t.todo_content }}</td>
+            <td class="text-center">
+              <span class="badge
+                {% if t.status == 'Done' %}bg-success-subtle text-success
+                {% elif t.status == 'Missed' %}bg-danger-subtle text-danger
+                {% else %}bg-warning-subtle text-warning{% endif %}
+                rounded-pill px-3">
+                {{ t.status }}
+              </span>
+            </td>
+            <td class="pe-4 text-end small text-muted">
+              {{ t.updated_at.strftime('%H:%M %d/%m') if t.updated_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </div>
+
+  <!-- PERSONAL TASKS -->
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" data-task-table="Personal Tasks">
+    <div class="p-3 fw-bold">Personal Tasks</div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="bg-light small text-muted">
+          <tr>
+            <th class="ps-4">No</th>
+            <th>Content</th>
+            <th class="text-center">Status</th>
+            <th class="pe-4 text-end">Deadline</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in personal_tasks %}
+          <tr data-task-type="Personal Tasks">
+            <td class="ps-4">{{ loop.index }}</td>
+            <td>{{ t.title }}</td>
+            <td class="text-center">
+              <span class="badge
+                {% if t.status == 'Done' %}bg-success-subtle text-success
+                {% elif t.status == 'Missed' %}bg-danger-subtle text-danger
+                {% else %}bg-warning-subtle text-warning{% endif %}
+                rounded-pill px-3">
+                {{ t.status }}
+              </span>
+            </td>
+            <td class="pe-4 text-end small text-muted">
+              {{ t.updated_at.strftime('%H:%M %d/%m') if t.updated_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- COMPANY TASKS -->
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden" data-task-table="Company Tasks">
+    <div class="p-3 fw-bold">Company Tasks</div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="bg-light small text-muted">
+          <tr>
+            <th class="ps-4">No</th>
+            <th>Content</th>
+            <th class="text-center">Status</th>
+            <th class="pe-4 text-end">Deadline</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in corp_tasks %}
+          <tr data-task-type="Company Tasks">
+            <td class="ps-4">{{ loop.index }}</td>
+            <td>{{ t.title }}</td>
+            <td class="text-center">
+              <span class="badge bg-warning-subtle text-warning rounded-pill px-3">
+                {{ t.status }}
+              </span>
+            </td>
+            <td class="pe-4 text-end small text-muted">
+              {{ t.due_at.strftime('%H:%M %d/%m') if t.due_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
+<!-- CHART -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    const ctx = document.getElementById('performanceChart').getContext('2d');
-    new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Done', 'Not Yet', 'Missed'],
-            datasets: [{
-                data: [{{ stats.done }}, {{ stats.not_yet }}, {{ stats.missed }}],
-                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
-                borderWidth: 0,
-                hoverOffset: 10
-            }]
-        },
-        options: {
-            cutout: '75%',
-            plugins: {
-                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 25 } }
-            }
-        }
-    });
+const breakdown = {{ task_breakdown | tojson }};
+new Chart(document.getElementById('performanceChart').getContext('2d'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Customer Tasks','Personal Tasks','Company Tasks'],
+    datasets: [{
+      data: [
+        breakdown.customer.total,
+        breakdown.personal.total,
+        breakdown.corp.total
+      ],
+      backgroundColor: ['#0d6efd','#20c997','#ffc107'],
+      borderWidth: 0,
+      hoverOffset: 12
+    }]
+  },
+  options: {
+    cutout: '72%',
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { usePointStyle:true, padding:18 },
+        onClick:(e,i)=>filterTaskByType(i.text)
+      }
+    }
+  }
+});
 </script>
+
+<script>
+function filterTaskByType(type) {
+  document.querySelectorAll('[data-task-table]').forEach(card => {
+    if (type === 'ALL') {
+      card.style.display = '';
+      return;
+    }
+
+    if (card.dataset.taskTable === type) {
+      card.style.display = '';
+    } else {
+      card.style.display = 'none';
+    }
+  });
+}
+</script>
+
 {% endblock %}

@@ -1,51 +1,99 @@
+import streamlit as st
 import requests
-import json
 
-# --- CẤU HÌNH ---
-USER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiVEhHIEZ1bGZpbGwiLCJleHAiOjE3NzI0MjMyNTYsImFwcGxpY2F0aW9uIjoxLCJ1aWQiOiI0ZWJjZDNkOC04ZjQ4LTQwYzUtOTMxZC0wNDNkNzkwMTgwODYiLCJzZXNzaW9uX2lkIjoiNzNkNmE1MGUtZDZmOC00MzhmLWExOGMtODMwYzRjMzk5ZDQwIiwiaWF0IjoxNzY0NjQ3MjU2LCJmYl9pZCI6IjE1NjgwMDQ1NTUwMjEwMCIsImxvZ2luX3Nlc3Npb24iOm51bGwsImZiX25hbWUiOiJUSEcgRnVsZmlsbCJ9.KsHVnDMNvy8ldjyNQLMR0CJk0HFczp5w0wrUaS4LQeA"
-TARGET_TAG = "2- Khách mới"
+# Cấu hình các đầu mục API từ tài liệu
+BASE_URL = "https://pages.fm/api/v1"
+PUBLIC_V1 = "https://pages.fm/api/public_api/v1"
+PUBLIC_V2 = "https://pages.fm/api/public_api/v2"
 
-def run_final_api_test():
-    print(f"🎯 ĐANG TRÍCH XUẤT SỐ ĐIỆN THOẠI SẠCH: '{TARGET_TAG}'\n")
+st.set_page_config(page_title="Pancake CRM Lite", layout="wide")
 
-    url_pages = "https://pages.fm/api/v1/pages"
-    pages = requests.get(url_pages, params={"access_token": USER_TOKEN}).json().get("categorized", {}).get("activated", [])
+st.title("🔌 Pancake CRM Connector")
+st.markdown("---")
 
-    for p in pages:
-        p_id = p.get("id")
-        url_gen = f"https://pages.fm/api/v1/pages/{p_id}/generate_page_access_token"
-        p_token = requests.post(url_gen, params={"page_id": p_id, "access_token": USER_TOKEN}).json().get("page_access_token")
+# --- SIDEBAR: Quản lý Token ---
+st.sidebar.header("Xác thực")
+user_token = st.sidebar.text_input("Nhập User Access Token", type="password", help="Lấy từ Account -> Personal Settings")
+
+# --- LOGIC CHÍNH ---
+if user_token:
+    # 1. Lấy danh sách Page
+    try:
+        pages_resp = requests.get(f"{BASE_URL}/pages", params={"access_token": user_token})
         
-        if not p_token: continue
+        if pages_resp.status_code == 200:
+            pages_data = pages_resp.json().get("pages", [])
+            if not pages_data:
+                # Một số trường hợp API trả về cấu trúc 'categorized'
+                cat = pages_resp.json().get("categorized", {})
+                pages_data = cat.get("activated", []) + cat.get("inactivated", [])
 
-        url_tags = f"https://pages.fm/api/public_api/v1/pages/{p_id}/tags"
-        tags = requests.get(url_tags, params={"page_access_token": p_token}).json().get("tags", [])
-        tag_id = next((t.get("id") for t in tags if TARGET_TAG.lower() in t.get("text", "").lower()), None)
+            if pages_data:
+                page_map = {p['name']: p['id'] for p in pages_data}
+                selected_page_name = st.selectbox("1. Chọn Fanpage", list(page_map.keys()))
+                page_id = page_map[selected_page_name]
 
-        if tag_id is not None:
-            url_convs = f"https://pages.fm/api/public_api/v2/pages/{p_id}/conversations"
-            convs = requests.get(url_convs, params={"page_access_token": p_token, "tags": tag_id, "type": "INBOX"}).json().get("conversations", [])
+                # 2. Tự động lấy Page Access Token
+                # Lưu ý: Phải gửi page_id trong query params theo đúng tài liệu
+                token_res = requests.post(
+                    f"{BASE_URL}/pages/{page_id}/generate_page_access_token",
+                    params={"access_token": user_token, "page_id": page_id}
+                )
 
-            for conv in convs:
-                customers_data = conv.get("customers", [])
-                # Lấy danh sách số điện thoại thô
-                raw_phones = conv.get("recent_phone_numbers", [])
-                
-                if customers_data:
-                    customer = customers_data[0]
-                    name = customer.get("name", "Khách hàng ẩn danh")
+                if token_res.status_code == 200:
+                    page_token = token_res.json().get("page_access_token")
+                    st.sidebar.success(f"Đã kết nối: {selected_page_name}")
                     
-                    # LOGIC MỚI: Chỉ lấy chuỗi phone_number sạch
-                    clean_phone = "Chưa có SĐT"
-                    if raw_phones and isinstance(raw_phones[0], dict):
-                        # Trích xuất phím 'phone_number' từ Object đầu tiên
-                        clean_phone = raw_phones[0].get("phone_number", "Chưa có SĐT")
-                    elif raw_phones and isinstance(raw_phones[0], str):
-                        clean_phone = raw_phones[0]
+                    # 3. Lấy danh sách hội thoại
+                    st.subheader("👥 Danh sách khách hàng mới nhất")
+                    conv_resp = requests.get(
+                        f"{PUBLIC_V2}/pages/{page_id}/conversations",
+                        params={"page_access_token": page_token, "page_id": page_id, "type": "INBOX"}
+                    )
 
-                    print(f"      👤 Tên: {name}")
-                    print(f"      📞 SĐT: {clean_phone}")
-                    print("      " + "-"*20)
+                    if conv_resp.status_code == 200:
+                        conversations = conv_resp.json().get("conversations", [])
+                        if conversations:
+                            # Hiển thị danh sách để chọn
+                            customer_list = {}
+                            for c in conversations:
+                                name = c.get("participants", [{}])[0].get("name", "Khách hàng")
+                                customer_list[f"{name} (ID: {c['id']})"] = c['id']
 
-if __name__ == "__main__":
-    run_final_api_test()
+                            selected_customer = st.selectbox("2. Chọn khách hàng", list(customer_list.keys()))
+                            conv_id = customer_list[selected_customer]
+
+                            # 4. Soạn và gửi tin nhắn
+                            st.markdown("---")
+                            st.subheader(f"💬 Gửi tin nhắn đến: {selected_customer}")
+                            msg_content = st.text_area("Nội dung tin nhắn")
+
+                            if st.button("Gửi Inbox ngay"):
+                                if msg_content:
+                                    send_res = requests.post(
+                                        f"{PUBLIC_V1}/pages/{page_id}/conversations/{conv_id}/messages",
+                                        params={"page_access_token": page_token},
+                                        json={"action": "reply_inbox", "message": msg_content}
+                                    )
+                                    
+                                    if send_res.status_code == 200:
+                                        st.success("✅ Gửi tin nhắn thành công!")
+                                    else:
+                                        st.error(f"❌ Lỗi gửi tin: {send_res.text}")
+                                else:
+                                    st.warning("Vui lòng nhập nội dung.")
+                        else:
+                            st.info("Không có hội thoại nào gần đây.")
+                    else:
+                        st.error("Không thể lấy danh sách hội thoại. Kiểm tra lại quyền của Page Token.")
+                else:
+                    st.error(f"Không thể tạo Page Token. Chi tiết: {token_res.text}")
+            else:
+                st.warning("Tài khoản này không quản lý Page nào.")
+        else:
+            st.error(f"Lỗi xác thực User Token: {pages_resp.status_code}")
+            
+    except Exception as e:
+        st.error(f"Lỗi hệ thống: {str(e)}")
+else:
+    st.info("Vui lòng nhập User Access Token ở thanh bên trái để bắt đầu.")

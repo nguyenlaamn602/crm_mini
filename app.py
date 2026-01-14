@@ -35,7 +35,7 @@ LAST_SYNC_TIMESTAMP = time.time()
 # ---------------------------
 # Corp Task: Departments + Status
 # ---------------------------
-CORP_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale"]
+CORP_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"]
 
 # internal keys (stable)
 CORP_STATUSES = ["Unreceived", "Received", "In_progress", "Pending_approval", "Done", "Cancelled"]
@@ -164,7 +164,12 @@ def can_update_corp_status(corp_task):
     return False
 
 def can_edit_corp_task(corp_task):
-    return current_user.role == "admin"
+    if current_user.role == "admin":
+        return True
+    assigned = corp_task.get("assigned_to", [])
+    if isinstance(assigned, list):
+        return ObjectId(current_user.id) in assigned
+    return ObjectId(current_user.id) == assigned
 
 def validate_corp_status_change(new_status: str, corp_task):
     if new_status not in CORP_STATUSES:
@@ -369,6 +374,26 @@ def pancake_sync_task():
     except Exception as e:
         print("[PANCAKE] Sync FAILED:", repr(e))
 
+def sync_pancake_conversation_for_customer(customer):
+    service = PancakeService()
+
+    pages = service.fetch_pages()
+    for page in pages:
+        page_id = page["id"]
+        page_username = page["username"]
+
+        conversations = service.fetch_conversations(page_id)
+
+        for c in conversations:
+            if c.get("psid") == customer.get("psid"):
+                return {
+                    "page_id": page_id,
+                    "page_username": page_username,
+                    "conversation_id": c["id"]
+                }
+    return None
+
+
 # ---------------------------
 # Auto Missed for Task thường
 # ---------------------------
@@ -499,6 +524,28 @@ def add_customer():
         "created_at": now_dt(),
     })
     return redirect(url_for("view_sector", name=sector))
+
+@app.route('/customer/<cid>/sync-pancake', methods=['POST'])
+@login_required
+def sync_customer_pancake(cid):
+    customer = db.customers.find_one({"_id": ObjectId(cid)})
+    if not customer:
+        return jsonify({"status": "not_found"}), 404
+
+    if not customer.get("psid"):
+        return jsonify({"status": "missing_psid"}), 400
+
+    result = sync_pancake_conversation_for_customer(customer)
+    if not result:
+        return jsonify({"status": "not_found_conversation"})
+
+    db.customers.update_one(
+        {"_id": customer["_id"]},
+        {"$set": result}
+    )
+
+    return jsonify({"status": "success"})
+
 
 # ✅ DELETE CUSTOMER (Admin only)
 @app.route('/customer/delete/<psid>', methods=['POST'])
@@ -863,11 +910,7 @@ def view_corp_tasks():
         if "assignees" not in t:
             t["assignees"] = [t["assignee"]] if t.get("assignee") else []
 
-    users_list = (
-        list(db.users.find({}, {"username": 1, "_id": 1}))
-        if current_user.role == 'admin'
-        else []
-    )
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
 
     # ===== SERIALIZE FOR CHART (NO ObjectId) =====
     corp_tasks_chart = []
@@ -893,111 +936,115 @@ def view_corp_tasks():
 @app.route('/corp-task/add', methods=['POST'])
 @login_required
 def add_corp_task():
-    if current_user.role != 'admin':
-        return redirect(url_for('view_corp_tasks'))
-
+    # Tạo ID ngẫu nhiên cho task
     cid = 'corp_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
+    
+    # LẤY DANH SÁCH NGƯỜI ĐƯỢC GÁN (Mở cho tất cả các Role)
     assigned_user_ids = request.form.getlist('assigned_user_ids')
+    
+    # Nếu là User thường mà không chọn ai, thì mặc định tự gán cho mình
+    if not assigned_user_ids:
+        assigned_user_ids = [str(current_user.id)]
+
+    # Parse thời hạn
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
-    if not title or department not in CORP_DEPARTMENTS or not assigned_user_ids or not due_at:
-        flash('Missing required fields when creating company task', 'danger')
+    # Kiểm tra dữ liệu đầu vào
+    if not title or department not in CORP_DEPARTMENTS or not due_at:
+        flash('Thiếu thông tin hoặc phòng ban không hợp lệ', 'danger')
         return redirect(url_for('view_corp_tasks'))
 
-    users = list(db.users.find({
-        "_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}
-    }))
-
-    if not users:
-        flash('Assignee not found', 'danger')
+    # Xử lý OID và lấy tên hiển thị
+    try:
+        # Chuyển string ID thành ObjectId, bọc trong try-except để tránh crash nếu ID lỗi
+        user_oids = [ObjectId(uid) for uid in assigned_user_ids]
+        users = list(db.users.find({"_id": {"$in": user_oids}}))
+        
+        assignees = [u.get("username", "user") for u in users]
+    except Exception as e:
+        flash('Lỗi định dạng người dùng', 'danger')
         return redirect(url_for('view_corp_tasks'))
 
-    assigned_to_oids = [u["_id"] for u in users]
-    assignees = [u.get("username", "user") for u in users]
-
+    # Lưu vào Database
     db.corp_tasks.insert_one({
         "id": cid,
         "title": title,
         "department": department,
-
-        # ✅ MULTI ASSIGNEE (NEW)
-        "assigned_to": assigned_to_oids,
-        "assignees": assignees,
-        "assignee": assignees[0],  # backward compatible
-
+        "assigned_to": [u["_id"] for u in users], # Lưu mảng OID
+        "assignees": assignees,                   # Lưu mảng tên để hiển thị nhanh
+        "assignee": assignees[0] if assignees else '---',
         "status": "Unreceived",
         "due_at": due_at,
-
         "created_at": now_dt(),
         "updated_at": now_dt(),
         "assigned_by": current_user.username,
         "assigned_by_role": current_user.role,
         "assigned_at": now_dt(),
-
         "notify_pending": True,
-        "notified_at": None
+        "admin_request": None 
     })
 
+    flash('Đã tạo task công ty thành công', 'success')
+    return redirect(url_for('view_corp_tasks'))
+
+# Thêm Route mới để User gửi yêu cầu Edit/Xoá
+@app.route('/corp-task/request-action/<id>', methods=['POST'])
+@login_required
+def request_corp_action(id):
+    action_type = request.form.get('action_type') # 'edit' hoặc 'delete'
+    reason = request.form.get('reason', '')
+    
+    if action_type not in ['edit', 'delete']:
+        return jsonify({"status": "error", "message": "Invalid action"}), 400
+        
+    db.corp_tasks.update_one(
+        {"id": id},
+        {"$set": {
+            "admin_request": action_type,
+            "request_reason": reason,
+            "request_by": current_user.username,
+            "updated_at": now_dt()
+        }}
+    )
+    flash(f"Đã gửi yêu cầu {action_type} tới Admin", "info")
     return redirect(url_for('view_corp_tasks'))
 
 @app.route('/corp-task/update/<id>', methods=['POST'])
 @login_required
 def update_corp_task(id):
     t = db.corp_tasks.find_one({"id": id})
-    if not t:
-        return redirect(url_for('view_corp_tasks'))
-    if not can_edit_corp_task(t):
+    if not t or not can_edit_corp_task(t):
+        flash("Bạn không có quyền chỉnh sửa task này", "danger")
         return redirect(url_for('view_corp_tasks'))
 
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
-    assigned_user_ids = request.form.getlist('assigned_user_ids')
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
-    if not title or department not in CORP_DEPARTMENTS or not assigned_user_ids or not due_at:
-        flash('Thiếu thông tin khi update corp task', 'danger')
-        return redirect(url_for('view_corp_tasks'))
-    users = list(db.users.find({
-        "_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}
-    }))
-    if not users:
-        flash('Assignee không tồn tại', 'danger')
-        return redirect(url_for('view_corp_tasks'))
-
-    assigned_to_oids = [u["_id"] for u in users]
-    assignees = [u.get("username", "user") for u in users]
-    first_name = assignees[0] if assignees else "user"
-
-    old_assigned = t.get("assigned_to")
-    if isinstance(old_assigned, list):
-        old_set = set([str(x) for x in old_assigned])
-    elif isinstance(old_assigned, ObjectId):
-        old_set = set([str(old_assigned)])
+    # Admin được quyền đổi người phụ trách, User thì giữ nguyên
+    if current_user.role == 'admin':
+        assigned_user_ids = request.form.getlist('assigned_user_ids')
+        users = list(db.users.find({"_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}}))
+        assigned_to_oids = [u["_id"] for u in users]
+        assignees = [u.get("username", "user") for u in users]
     else:
-        old_set = set()
-
-    new_set = set([str(x) for x in assigned_to_oids])
+        assigned_to_oids = t.get("assigned_to")
+        assignees = t.get("assignees")
 
     upd = {
         "title": title,
         "department": department,
         "assigned_to": assigned_to_oids,
         "assignees": assignees,
-        "assignee": first_name,
         "due_at": due_at,
-        "updated_at": now_dt()
+        "updated_at": now_dt(),
+        "admin_request": None # Xóa trạng thái pending nếu có sau khi sửa
     }
 
-    if new_set != old_set:
-        upd["notify_pending"] = True
-        upd["assigned_by"] = current_user.username
-        upd["assigned_by_role"] = current_user.role
-        upd["assigned_at"] = now_dt()
-        upd["status"] = "Unreceived"
-
     db.corp_tasks.update_one({"id": id}, {"$set": upd})
+    flash("Cập nhật task thành công", "success")
     return redirect(url_for('view_corp_tasks'))
 
 @app.route('/corp-task/status/<id>', methods=['POST'])
@@ -1027,6 +1074,22 @@ def delete_corp_task(id):
         return redirect(request.referrer or url_for("view_corp_tasks"))
     db.corp_tasks.delete_one({"id": id})
     return redirect(request.referrer or url_for("view_corp_tasks"))
+
+@app.route('/corp-task/request-delete/<id>', methods=['POST'])
+@login_required
+def request_corp_delete(id):
+    reason = request.form.get('reason', '')
+    db.corp_tasks.update_one(
+        {"id": id},
+        {"$set": {
+            "admin_request": "delete",
+            "request_reason": reason,
+            "request_by": current_user.username,
+            "updated_at": now_dt()
+        }}
+    )
+    flash("Đã gửi yêu cầu xóa task tới Admin", "info")
+    return redirect(url_for('view_corp_tasks'))
 
 # ---------------------------
 # Notifications (task thường + corp task)
@@ -1156,6 +1219,25 @@ def api_admin_missed_ack():
     )
     return jsonify({"status": "success"})
 
+@app.route('/api/admin/corp-requests')
+@login_required
+def api_admin_corp_requests():
+    if current_user.role != "admin":
+        return jsonify({"items": []})
+    
+    # Tìm các task có yêu cầu từ user
+    requests = list(db.corp_tasks.find({"admin_request": {"$ne": None}}))
+    
+    output = []
+    for r in requests:
+        output.append({
+            "id": r.get("id"),
+            "title": r.get("title"),
+            "request_type": r.get("admin_request"),
+            "reason": r.get("request_reason", ""),
+            "user": r.get("request_by", "User")
+        })
+    return jsonify({"items": output})
 # ---------------------------
 # ✅ ADMIN: User Management (Admin access)
 # ---------------------------

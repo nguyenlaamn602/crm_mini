@@ -3,7 +3,7 @@
 
 {% block content %}
 
-{# Status color mapping #}
+{# Cấu hình màu sắc trạng thái #}
 {% set status_color = {
   "Unreceived": "bg-danger",
   "Received": "bg-brown",
@@ -17,13 +17,10 @@
   <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-4 rounded-4 shadow-sm">
     <div>
       <h4 class="mb-1 fw-bold text-dark">Company Tasks</h4>
-
-      {% if current_user.role == 'admin' %}
       <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-3"
               data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
         <i class="bi bi-plus-lg me-1"></i> Create New Task
       </button>
-      {% endif %}
     </div>
 
     <form action="/corp-tasks" method="GET" class="d-flex gap-3">
@@ -51,7 +48,6 @@
     </form>
   </div>
 
-  <!-- Department tabs -->
   <div class="d-flex flex-wrap gap-2 mb-3">
     {% set current_dept = request.args.get('dept','') %}
     <a href="/corp-tasks"
@@ -68,12 +64,10 @@
     {% endfor %}
   </div>
 
-  <!-- ====================== CHART (NEW) ====================== -->
   <div class="card border-0 shadow-sm rounded-4 mb-4">
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="fw-bold mb-0">Company Task Overview</h6>
-
       </div>
 
       <div class="row text-center mb-3">
@@ -90,9 +84,9 @@
           <div class="text-muted small">Not Done</div>
         </div>
       </div>
-<div style="width:300px; height:300px; margin: 0 auto;">
-  <canvas id="corpTaskChart"></canvas>
-</div>
+      <div style="width:300px; height:300px; margin: 0 auto;">
+        <canvas id="corpTaskChart"></canvas>
+      </div>
     </div>
   </div>
 
@@ -119,9 +113,12 @@
               <div class="d-flex flex-column">
                 <span class="fw-bold text-dark" style="font-size: 0.95rem; line-height: 1.3;">
                   {{ t.title }}
+                  {% if t.admin_request == 'delete' %}
+                    <span class="badge bg-danger ms-1" style="font-size: 0.65rem;">PENDING DELETE</span>
+                  {% endif %}
                 </span>
                 <span class="text-muted small mt-1">
-                  <i class="bi bi-person-check me-1"></i>Assigned by: {{ t.assigned_by or '---' }}
+                  <i class="bi bi-person-check me-1"></i>By: {{ t.assigned_by or '---' }}
                   {% if t.assigned_at %} • {{ t.assigned_at.strftime('%d/%m %H:%M') }}{% endif %}
                 </span>
               </div>
@@ -143,13 +140,10 @@
 
             <td>
               <div class="d-flex align-items-center">
-                {# Avatar = first letter of first assignee (keeps old style) #}
                 <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2"
                      style="width: 28px; height: 28px; font-size: 0.8rem; font-weight: bold;">
-                  {{ (t.assignees[0][0].upper()) if t.assignees and t.assignees[0] else (t.assignee[0].upper() if t.assignee else '?') }}
+                  {{ (t.assignees[0][0].upper()) if t.assignees and t.assignees[0] else '?' }}
                 </div>
-
-                {# Multi assignees badges (new) #}
                 <div class="d-flex flex-wrap gap-1">
                   {% for name in (t.assignees if t.assignees else [t.assignee]) %}
                     {% if name %}
@@ -163,7 +157,6 @@
             </td>
 
             <td class="text-center">
-              {# Multi-assignee permission: admin OR user is in assigned_to list #}
               {% set assigned_ids = t.assigned_to | map('string') | list %}
               {% set can_change = (current_user.role == 'admin') or ((current_user.id|string) in assigned_ids) %}
 
@@ -196,60 +189,41 @@
                   <i class="bi bi-three-dots-vertical fs-5"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
-                  {% if current_user.role == 'admin' %}
-                  <li>
-                    <button class="dropdown-item rounded-2" data-bs-toggle="modal" data-bs-target="#editCorpTask{{ t.id }}">
-                      <i class="bi bi-pencil me-2"></i>Edit
-                    </button>
-                  </li>
-
-                  <li><hr class="dropdown-divider"></li>
-
-                  <li>
-                    <form method="POST" action="/corp-task/delete/{{ t.id }}" onsubmit="return confirm('Delete this task?');">
-                      <button type="submit" class="dropdown-item text-danger rounded-2">
-                        <i class="bi bi-trash me-2"></i>Delete Task
+                  {% if can_change %}
+                    <li>
+                      <button class="dropdown-item rounded-2" data-bs-toggle="modal" data-bs-target="#editCorpTask{{ t.id }}">
+                        <i class="bi bi-pencil me-2"></i>Edit
                       </button>
-                    </form>
-                  </li>
+                    </li>
+                  {% endif %}
 
-                  {% else %}
-                    {# Non-admin: keep menu, but no delete. Show cancel only if can_change #}
-                    {% if can_change %}
-                      <li>
-                        <button class="dropdown-item text-danger rounded-2" onclick="updateCorpStatus('{{ t.id }}','Cancelled')">
-                          <i class="bi bi-x-circle me-2"></i>Cancel Task
+                  {% if current_user.role == 'admin' %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                      <form method="POST" action="/corp-task/delete/{{ t.id }}" onsubmit="return confirm('Delete this task immediately?');">
+                        <button type="submit" class="dropdown-item text-danger rounded-2">
+                          <i class="bi bi-trash me-2"></i>Delete Now
                         </button>
-                      </li>
-                    {% else %}
-                      <li>
-                        <span class="dropdown-item text-muted rounded-2">
-                          <i class="bi bi-shield-lock me-2"></i>No permission
-                        </span>
-                      </li>
-                    {% endif %}
+                      </form>
+                    </li>
+                  {% elif can_change %}
+                    <li>
+                      <button class="dropdown-item text-danger rounded-2" data-bs-toggle="modal" data-bs-target="#requestDeleteModal{{ t.id }}">
+                        <i class="bi bi-trash me-2"></i>Request Delete
+                      </button>
+                    </li>
                   {% endif %}
                 </ul>
               </div>
             </td>
           </tr>
           {% endfor %}
-
-          {% if not corp_tasks %}
-          <tr>
-            <td colspan="7" class="text-center py-5 text-muted">
-              <i class="bi bi-inbox fs-2 d-block mb-2"></i> No tasks found.
-            </td>
-          </tr>
-          {% endif %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
 
-{% if current_user.role == 'admin' %}
-<!-- Create corp task -->
 <div class="modal fade" id="addCorpTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -277,23 +251,17 @@
 
             <div class="col-md-6">
               <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
-
               <div class="border rounded-3 p-2" style="max-height:180px; overflow-y:auto;">
                 {% for u in users_list %}
                 <div class="form-check">
-                  <input class="form-check-input"
-                         type="checkbox"
-                         name="assigned_user_ids"
-                         value="{{ u._id }}"
-                         id="assign_{{ u._id }}">
+                  <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="assign_{{ u._id }}"
+                  {% if u._id|string == current_user.id|string %}checked{% endif %}>
                   <label class="form-check-label" for="assign_{{ u._id }}">
-                    {{ u.username }}
+                    {{ u.username }} {% if u._id|string == current_user.id|string %}(Bạn){% endif %}
                   </label>
                 </div>
                 {% endfor %}
               </div>
-
-              <small class="text-muted">Select one or multiple assignees</small>
             </div>
           </div>
 
@@ -301,18 +269,6 @@
             <label class="form-label fw-bold text-muted small">DEADLINE</label>
             <input type="datetime-local" name="due_at" class="form-control rounded-3" required>
           </div>
-
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">STATUS</label>
-              <input type="text" class="form-control rounded-3 bg-light" value="Unreceived (auto)" readonly disabled>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">CREATOR</label>
-              <input type="text" class="form-control rounded-3 bg-light" value="{{ current_user.username }}" readonly disabled>
-            </div>
-          </div>
-
         </div>
 
         <div class="modal-footer border-0 bg-light px-4 py-3">
@@ -324,8 +280,31 @@
   </div>
 </div>
 
-<!-- Edit corp task -->
 {% for t in corp_tasks %}
+<div class="modal fade" id="requestDeleteModal{{ t.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header border-0 bg-danger py-2 px-3 text-white">
+        <h6 class="modal-title fw-bold">Request Delete</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="/corp-task/request-delete/{{ t.id }}" method="POST">
+        <div class="modal-body p-3">
+          <label class="form-label small fw-bold">Reason for deletion:</label>
+          <textarea name="reason" class="form-control form-control-sm" rows="3" required placeholder="Lý do cần xóa task..."></textarea>
+        </div>
+        <div class="modal-footer border-0 p-2 bg-light">
+          <button type="submit" class="btn btn-danger btn-sm w-100 rounded-pill">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% for t in corp_tasks %}
+{% set assigned_ids = t.assigned_to | map('string') | list %}
+{% if (current_user.role == 'admin') or ((current_user.id|string) in assigned_ids) %}
 <div class="modal fade" id="editCorpTask{{ t.id }}" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -350,52 +329,76 @@
                 {% endfor %}
               </select>
             </div>
-
             <div class="col-md-6">
-              <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
-
-              {# Ensure assigned_to is treated as list (backend already normalizes) #}
-              {% set edit_assigned_ids = t.assigned_to | map('string') | list %}
-
-              <div class="border rounded-3 p-2" style="max-height:180px; overflow-y:auto;">
-                {% for u in users_list %}
-                <div class="form-check">
-                  <input class="form-check-input"
-                         type="checkbox"
-                         name="assigned_user_ids"
-                         value="{{ u._id }}"
-                         id="edit_assign_{{ t.id }}_{{ u._id }}"
-                         {% if (u._id|string) in edit_assigned_ids %}checked{% endif %}>
-                  <label class="form-check-label" for="edit_assign_{{ t.id }}_{{ u._id }}">
-                    {{ u.username }}
-                  </label>
-                </div>
-                {% endfor %}
-              </div>
-
-              <small class="text-muted">Select one or multiple assignees</small>
+              <label class="form-label fw-bold text-muted small">DEADLINE</label>
+              <input type="datetime-local" name="due_at" class="form-control rounded-3"
+                     value="{{ t.due_at.strftime('%Y-%m-%dT%H:%M') if t.due_at else '' }}" required>
             </div>
           </div>
 
-          <div class="mb-3 mt-3">
-            <label class="form-label fw-bold text-muted small">DEADLINE</label>
-            <input type="datetime-local" name="due_at" class="form-control rounded-3"
-                   value="{{ t.due_at.strftime('%Y-%m-%dT%H:%M') if t.due_at else '' }}" required>
+          <div class="mt-3">
+            <label class="form-label fw-bold text-muted small">CHANGE ASSIGNEES</label>
+            <div class="border rounded-3 p-2" style="max-height:180px; overflow-y:auto;">
+              {% for u in users_list %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" 
+                       id="edit_assign_{{ t.id }}_{{ u._id }}"
+                       {% if (u._id|string) in assigned_ids %}checked{% endif %}>
+                <label class="form-check-label" for="edit_assign_{{ t.id }}_{{ u._id }}">
+                  {{ u.username }}
+                </label>
+              </div>
+              {% endfor %}
+            </div>
           </div>
         </div>
 
         <div class="modal-footer border-0 bg-light px-4 py-3">
           <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Save</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Save Changes</button>
         </div>
       </form>
     </div>
   </div>
 </div>
-{% endfor %}
 {% endif %}
+{% endfor %}
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+  // 1. BIỂU ĐỒ VÀ THỐNG KÊ (GIỮ NGUYÊN)
+  const _corpTasks = {{ corp_tasks_chart | tojson }};
+  const currentDept = '{{ request.args.get("dept", "ALL") }}';
+
+  function buildStats() {
+    let list = (currentDept === 'ALL' || currentDept === '') ? _corpTasks : _corpTasks.filter(t => t.department === currentDept);
+    const total = list.length;
+    const done = list.filter(t => t.status === 'Done').length;
+    const notDone = total - done;
+
+    document.getElementById('statTotal').innerText = total;
+    document.getElementById('statDone').innerText = done;
+    document.getElementById('statNotDone').innerText = notDone;
+
+    new Chart(document.getElementById('corpTaskChart').getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Done', 'Not Done'],
+        datasets: [{
+          data: [done, notDone],
+          backgroundColor: ['#198754', '#ffc107'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        cutout: '75%',
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+  }
+  buildStats();
+
+  // 2. CẬP NHẬT TRẠNG THÁI
   async function updateCorpStatus(taskId, status) {
     try {
       const res = await fetch(`/corp-task/status/${taskId}`, {
@@ -406,35 +409,66 @@
       const data = await res.json();
       if (data.status === 'success') location.reload();
       else alert(data.message || 'Unable to update status');
-    } catch(e) {
-      console.error(e);
-      alert('Status update error');
+    } catch(e) { console.error(e); }
+  }
+
+  // 3. ADMIN NOTIFICATION POLLING (TOAST POPUP) - CẢI TIẾN LOGIC
+  {% if current_user.role == 'admin' %}
+  const dismissedNotifications = new Set(); 
+
+  function adminConfirmDelete(taskId) {
+    if (confirm('Xác nhận xóa task này ngay lập tức?')) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/corp-task/delete/${taskId}`;
+      document.body.appendChild(form);
+      form.submit();
     }
   }
 
-  // Frontend validation for checkbox group (Create + Edit)
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/admin/corp-requests');
+      const data = await res.json();
+      if (data.items && data.items.length > 0) {
+        data.items.forEach(req => {
+          const toastId = `toast-${req.id}`;
+          if (req.request_type === 'delete' && !document.getElementById(toastId) && !dismissedNotifications.has(req.id)) {
+            const toastHTML = `
+              <div id="${toastId}" class="toast show position-fixed bottom-0 end-0 m-3 shadow-lg" style="z-index: 9999; min-width: 300px;">
+                <div class="toast-header bg-warning text-dark">
+                  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                  <strong class="me-auto">Yêu cầu Xóa từ ${req.user}</strong>
+                  <button type="button" class="btn-close" onclick="dismissedNotifications.add('${req.id}'); this.parentElement.parentElement.remove()"></button>
+                </div>
+                <div class="toast-body bg-white border-bottom rounded-bottom">
+                  <div class="mb-2"><strong>Task:</strong> ${req.title}</div>
+                  <div class="small text-muted mb-3">Lý do: ${req.reason}</div>
+                  <div class="d-flex gap-2">
+                    <button class="btn btn-danger btn-sm rounded-pill flex-grow-1" onclick="adminConfirmDelete('${req.id}')">
+                      Xác nhận Xóa
+                    </button>
+                    <button class="btn btn-light btn-sm rounded-pill" onclick="dismissedNotifications.add('${req.id}'); this.parentElement.parentElement.parentElement.remove()">
+                      Bỏ qua
+                    </button>
+                  </div>
+                </div>
+              </div>`;
+            document.body.insertAdjacentHTML('beforeend', toastHTML);
+          }
+        });
+      }
+    } catch (e) { console.log("Admin poll error"); }
+  }, 3000);
+  {% endif %}
+
+  // 4. VALIDATION
   (function () {
     const addForm = document.getElementById('addCorpTaskForm');
     if (addForm) {
       addForm.addEventListener('submit', function (e) {
         const checked = addForm.querySelectorAll('input[name="assigned_user_ids"]:checked');
-        if (!checked || checked.length === 0) {
-          e.preventDefault();
-          alert('Please select at least 1 assignee.');
-        }
-      });
-    }
-
-    const editForms = document.querySelectorAll('.editCorpTaskForm');
-    if (editForms && editForms.length) {
-      editForms.forEach(function (f) {
-        f.addEventListener('submit', function (e) {
-          const checked = this.querySelectorAll('input[name="assigned_user_ids"]:checked');
-          if (!checked || checked.length === 0) {
-            e.preventDefault();
-            alert('Please select at least 1 assignee.');
-          }
-        });
+        if (checked.length === 0) { e.preventDefault(); alert('Please select at least 1 assignee.'); }
       });
     }
   })();
@@ -442,53 +476,7 @@
 
 <style>
   .table-hover tbody tr:hover { background-color: #f8faff !important; }
-
-  /* Brown for "Received" status */
-  .bg-brown {
-    background-color: #8b5e3c !important;
-    color: #fff !important;
-  }
+  .bg-brown { background-color: #8b5e3c !important; color: #fff !important; }
 </style>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<script>
-  const _corpTasks = {{ corp_tasks_chart | tojson }};
-
-  function buildCorpStats(dept) {
-    let list = _corpTasks;
-    if (dept !== 'ALL') {
-      list = list.filter(t => t.department === dept);
-    }
-    const total = list.length;
-    const done = list.filter(t => t.status === 'Done').length;
-    const notDone = total - done;
-    return { total, done, notDone };
-  }
-
-  const ctx = document.getElementById('corpTaskChart');
-  if (ctx) {
-    let s = buildCorpStats('ALL');
-
-    document.getElementById('statTotal').innerText = s.total;
-    document.getElementById('statDone').innerText = s.done;
-    document.getElementById('statNotDone').innerText = s.notDone;
-
-    const chart = new Chart(ctx.getContext('2d'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Done', 'Not Done'],
-        datasets: [{
-          data: [s.done, s.notDone],
-          backgroundColor: ['#198754', '#ffc107']
-        }]
-      },
-      options: {
-        plugins: { legend: { position: 'bottom' } }
-      }
-    });
-
-  }
-</script>
 
 {% endblock %}

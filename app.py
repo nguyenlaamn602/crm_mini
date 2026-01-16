@@ -9,6 +9,15 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 import requests, time, random, string, re
 import uuid
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# Lấy Token trực tiếp từ .env giống ttest.py
+PANCAKE_USER_TOKEN = os.getenv("PANCAKE_USER_TOKEN")
+BASE_URL = "https://pages.fm/api/v1"
+PUBLIC_V1 = "https://pages.fm/api/public_api/v1"
+PUBLIC_V2 = "https://pages.fm/api/public_api/v2"
 
 app = Flask(__name__)
 
@@ -1547,6 +1556,92 @@ def pancake_broadcast_send():
         "total": len(results),
         "results": results
     })
+
+@app.route('/secret')
+@login_required
+def secret_crm_page():
+    if current_user.role != 'admin':
+        return redirect(url_for('index'))
+    return render_template('secret_crm.html')
+
+@app.route('/api/secret/get-pages')
+@login_required
+def api_get_pancake_pages():
+    # Logic lấy danh sách page từ ttest.py
+    resp = requests.get(f"{BASE_URL}/pages", params={"access_token": PANCAKE_USER_TOKEN})
+    if resp.status_code == 200:
+        data = resp.json().get("pages", [])
+        if not data:
+            cat = resp.json().get("categorized", {})
+            data = cat.get("activated", []) + cat.get("inactivated", [])
+        return jsonify({"pages": data})
+    return jsonify({"error": "Failed to fetch pages"}), resp.status_code
+
+@app.route('/api/secret/get-conversations/<page_id>')
+@login_required
+def api_get_pancake_conversations(page_id):
+    # 1. Tạo Page Access Token giống ttest.py
+    t_res = requests.post(
+        f"{BASE_URL}/pages/{page_id}/generate_page_access_token",
+        params={"access_token": PANCAKE_USER_TOKEN, "page_id": page_id}
+    )
+    if t_res.status_code != 200:
+        return jsonify({"error": "Failed to generate page token"}), 400
+    
+    page_token = t_res.json().get("page_access_token")
+    
+    # 2. Lấy hội thoại
+    c_res = requests.get(
+        f"{PUBLIC_V2}/pages/{page_id}/conversations",
+        params={"page_access_token": page_token, "page_id": page_id, "type": "INBOX"}
+    )
+    if c_res.status_code == 200:
+        return jsonify({
+            "conversations": c_res.json().get("conversations", []),
+            "page_token": page_token
+        })
+    return jsonify({"error": "Failed to fetch conversations"}), 400
+
+@app.route('/api/secret/bulk-send', methods=['POST'])
+@login_required
+def api_secret_bulk_send():
+    data = request.form
+    page_id = data.get('page_id')
+    page_token = data.get('page_token')
+    message = data.get('message')
+    conversation_ids = request.form.getlist('ids[]')
+    image_file = request.files.get('image')
+
+    content_ids = []
+    # Logic upload ảnh từ ttest.py
+    if image_file:
+        files = {"file": (image_file.filename, image_file.read(), image_file.content_type)}
+        u_res = requests.post(
+            f"{PUBLIC_V1}/pages/{page_id}/upload_contents",
+            params={"page_access_token": page_token},
+            files=files
+        )
+        if u_res.status_code == 200:
+            content_ids = [u_res.json().get("id")]
+
+    success_count = 0
+    # Logic gửi tin nhắn bulk
+    for conv_id in conversation_ids:
+        payload = {"action": "reply_inbox", "message": message}
+        if content_ids:
+            payload["content_ids"] = content_ids
+            payload["attachment_type"] = "PHOTO"
+
+        s_res = requests.post(
+            f"{PUBLIC_V1}/pages/{page_id}/conversations/{conv_id}/messages",
+            params={"page_access_token": page_token},
+            json=payload
+        )
+        if s_res.status_code == 200:
+            success_count += 1
+        time.sleep(1) # Giãn cách để tránh lỗi 429
+
+    return jsonify({"success": success_count, "total": len(conversation_ids)})
 
 
 if __name__ == '__main__':

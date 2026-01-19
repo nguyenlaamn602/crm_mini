@@ -189,6 +189,14 @@
                   <i class="bi bi-three-dots-vertical fs-5"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
+                  {# --- THÊM NÚT SEND TẠI ĐÂY --- #}
+                  <li>
+                    <button class="dropdown-item rounded-2" onclick="alert('API out of token')">
+                      <i class="bi bi-send me-2"></i>Send
+                    </button>
+                  </li>
+                  {# ---------------------------- #}
+
                   {% if can_change %}
                     <li>
                       <button class="dropdown-item rounded-2" data-bs-toggle="modal" data-bs-target="#editCorpTask{{ t.id }}">
@@ -224,6 +232,7 @@
   </div>
 </div>
 
+{# Modals and Scripts (Giữ nguyên toàn bộ logic hiện có) #}
 <div class="modal fade" id="addCorpTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -412,7 +421,7 @@
     } catch(e) { console.error(e); }
   }
 
-  // 3. ADMIN NOTIFICATION POLLING (TOAST POPUP) - CẢI TIẾN LOGIC
+  // 3. ADMIN NOTIFICATION POLLING
   {% if current_user.role == 'admin' %}
   const dismissedNotifications = new Set(); 
 

@@ -43,32 +43,61 @@
         </thead>
         <tbody>
           {% for t in tasks %}
-          <tr>
+          <!-- ✅ Click row to view detail -->
+          <tr style="cursor: pointer;" onclick="window.location.href='/task/detail/{{ t.id }}'">
             <td>{{ loop.index }}</td>
-            <td class="fw-semibold">{{ t.title }}</td>
+            <td class="fw-semibold">
+                {{ t.title }}
+                {% if t.attachment %}
+                <div class="mt-1">
+                    <!-- ✅ Stop propagation -->
+                    <a href="{{ url_for('static', filename='uploads/' + t.attachment) }}" target="_blank" 
+                       class="badge bg-light text-secondary border text-decoration-none"
+                       onclick="event.stopPropagation()">
+                        <i class="bi bi-paperclip me-1"></i>Attachment
+                    </a>
+                </div>
+                {% endif %}
+            </td>
             <td>
               {{ t.due_at.strftime('%d/%m %H:%M') if t.due_at else '—' }}
             </td>
             <td class="text-center">
-  <button class="btn p-0 border-0 shadow-none status-toggle-btn"
-          onclick="togglePersonalTaskStatus(this, '{{ t.id }}', '{{ t.status }}')">
-    {% if t.status == 'Done' %}
-      <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">Done</span>
-    {% elif t.status == 'Missed' %}
-      <span class="badge bg-danger-subtle text-danger rounded-pill px-3 py-2">Missed</span>
-    {% else %}
-      <span class="badge bg-info-subtle text-info rounded-pill px-3 py-2">Not yet</span>
-    {% endif %}
-  </button>
-</td>
+              <!-- ✅ Stop propagation for status button -->
+              <button class="btn p-0 border-0 shadow-none status-toggle-btn"
+                      onclick="event.stopPropagation(); togglePersonalTaskStatus(this, '{{ t.id }}', '{{ t.status }}')">
+                {% if t.status == 'Done' %}
+                  <span class="badge bg-success-subtle text-success rounded-pill px-3 py-2">Done</span>
+                {% elif t.status == 'Missed' %}
+                  <span class="badge bg-danger-subtle text-danger rounded-pill px-3 py-2">Missed</span>
+                {% else %}
+                  <span class="badge bg-info-subtle text-info rounded-pill px-3 py-2">Not yet</span>
+                {% endif %}
+              </button>
+            </td>
 
             <td class="text-end">
-              <form action="/personal-task/delete/{{ t.id }}" method="POST"
-                    onsubmit="return confirm('Delete this task?')">
-                <button class="btn btn-link text-danger">
-                  <i class="bi bi-trash"></i>
-                </button>
-              </form>
+              <!-- ✅ Stop propagation for dropdown -->
+              <div class="dropdown" onclick="event.stopPropagation()">
+                  <button class="btn btn-link text-muted p-0 shadow-none" data-bs-toggle="dropdown">
+                      <i class="bi bi-three-dots-vertical"></i>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
+                      <li>
+                        <a class="dropdown-item rounded-2" href="/task/detail/{{ t.id }}">
+                            <i class="bi bi-eye me-2"></i>View Detail
+                        </a>
+                      </li>
+                      <li>
+                          <form action="/personal-task/delete/{{ t.id }}" method="POST"
+                                onsubmit="return confirm('Delete this task?')" class="m-0">
+                            <button class="dropdown-item text-danger rounded-2">
+                              <i class="bi bi-trash me-2"></i> Delete
+                            </button>
+                          </form>
+                      </li>
+                  </ul>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -78,34 +107,47 @@
   </div>
 </div>
 
-<!-- ADD MODAL -->
-<div class="modal fade" id="addPersonalTask">
+<!-- ✅ ADD MODAL (Synchronized Style) -->
+<div class="modal fade" id="addPersonalTask" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
-    <form class="modal-content" method="POST" action="/personal-task/add">
-      <div class="modal-header">
-        <h5 class="modal-title">Add Personal Task</h5>
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header bg-primary text-white py-3 px-4">
+        <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Add Personal Task</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
-        <input name="title" class="form-control mb-3"
-               placeholder="Task title" required>
-        <textarea name="description" class="form-control mb-3"
-                  placeholder="Description (optional)"></textarea>
-        <input type="datetime-local" name="due_at" class="form-control">
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary">Create</button>
-      </div>
-    </form>
+      
+      <!-- Added enctype for file upload -->
+      <form action="/personal-task/add" method="POST" enctype="multipart/form-data">
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label fw-bold text-muted small">TASK TITLE</label>
+            <input type="text" name="title" class="form-control rounded-3" required placeholder="What needs to be done?">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold text-muted small">DESCRIPTION</label>
+            <textarea name="description" class="form-control rounded-3" rows="3" placeholder="Optional details..."></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold text-muted small">DEADLINE</label>
+            <input type="datetime-local" name="due_at" class="form-control rounded-3">
+          </div>
+          
+          <div class="mb-3 mt-3">
+             <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
+             <input type="file" name="attachment" class="form-control rounded-3">
+          </div>
+        </div>
+
+        <div class="modal-footer border-0 bg-light px-4 py-3">
+          <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
-
-<script>
-function togglePersonalStatus(id) {
-  fetch(`/personal-task/quick-update/${id}`, { method: 'POST' })
-    .then(() => location.reload());
-}
-</script>
 
 <script>
 async function togglePersonalTaskStatus(button, taskId, currentStatus) {
@@ -132,5 +174,10 @@ async function togglePersonalTaskStatus(button, taskId, currentStatus) {
 }
 </script>
 
+<style>
+    .status-toggle-btn { transition: transform 0.15s ease; cursor: pointer; }
+    .status-toggle-btn:hover { transform: scale(1.05); }
+    .table-hover tbody tr:hover { background-color: #f8faff !important; }
+</style>
 
 {% endblock %}

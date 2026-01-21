@@ -1,235 +1,318 @@
 {% extends "base.html" %}
-{% block title %}Performance - {{ staff.username }}{% endblock %}
+{% block title %}User Detail - {{ staff.username }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid p-0">
-
-  <!-- HEADER -->
-  <div class="mb-4 d-flex align-items-center gap-3">
-    <a href="/admin/users" class="btn btn-light rounded-circle shadow-sm">
-      <i class="bi bi-arrow-left"></i>
-    </a>
-    <div>
-      <h4 class="fw-bold mb-0">Dashboard: {{ staff.username }}</h4>
-      <span class="badge bg-primary rounded-pill small">Staff Insights</span>
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="/admin/users" class="text-decoration-none text-secondary small fw-bold">
+                <i class="bi bi-arrow-left me-1"></i> Back to Users
+            </a>
+            <h4 class="fw-bold mt-2 mb-0">User Profile: {{ staff.username }}</h4>
+        </div>
+        <div>
+            {% if staff.role == 'admin' %}
+                <span class="badge bg-danger fs-6 rounded-pill px-3">Admin</span>
+            {% else %}
+                <span class="badge bg-success fs-6 rounded-pill px-3">User</span>
+            {% endif %}
+        </div>
     </div>
-  </div>
 
-  <!-- FILTER BUTTONS -->
-  <div class="mb-3 d-flex gap-2">
-    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3"
-            onclick="filterTaskByType('ALL')">All</button>
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div id="flash-messages">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} rounded-4 mb-4 shadow-sm border-0 fade show" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
 
-    <button class="btn btn-sm btn-outline-primary rounded-pill px-3"
-            onclick="filterTaskByType('Customer Tasks')">Customer</button>
+    <div class="row g-4">
+        <!-- Left: User Info & Settings -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm rounded-4 mb-4">
+                <div class="card-body p-4 text-center">
+                    <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3" style="width: 80px; height: 80px; font-size: 2rem; font-weight: bold;">
+                        {{ staff.username[0].upper() }}
+                    </div>
+                    <h5 class="fw-bold mb-1">{{ staff.username }}</h5>
+                    <p class="text-muted small mb-3">ID: {{ staff._id }}</p>
+                    
+                    <hr class="my-4 opacity-25">
 
-    <button class="btn btn-sm btn-outline-success rounded-pill px-3"
-            onclick="filterTaskByType('Personal Tasks')">Personal</button>
+                    <!-- Role Update -->
+                    <form action="/admin/user/update_role/{{ staff._id }}" method="POST" class="mb-3 text-start">
+                        <label class="form-label small fw-bold text-muted">Role</label>
+                        <select name="role" class="form-select rounded-3" onchange="this.form.submit()">
+                            <option value="user" {% if staff.role == 'user' %}selected{% endif %}>User</option>
+                            <option value="admin" {% if staff.role == 'admin' %}selected{% endif %}>Admin</option>
+                        </select>
+                    </form>
 
-    <button class="btn btn-sm btn-outline-warning rounded-pill px-3"
-            onclick="filterTaskByType('Company Tasks')">Company</button>
-  </div>
+                    <!-- Department Update -->
+                    <form action="/admin/user/update_department/{{ staff._id }}" method="POST" class="mb-3 text-start">
+                        <label class="form-label small fw-bold text-muted">Department</label>
+                        <select name="department" class="form-select rounded-3" onchange="this.form.submit()">
+                            {% if not staff.get('department') %}
+                                <option value="" selected>-- Unassigned --</option>
+                            {% endif %}
+                            {% for dept in departments %}
+                                <option value="{{ dept }}" {% if staff.get('department') == dept %}selected{% endif %}>{{ dept }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
 
-  <!-- STATS + CHART -->
-  <div class="row g-4 mb-4">
-    <div class="col-md-8">
-      <div class="row g-4">
-        <div class="col-md-6">
-          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white">
-            <div class="text-muted small fw-bold mb-1">TOTAL TASKS</div>
-            <div class="h2 fw-bold text-primary">{{ stats.total }}</div>
-          </div>
+                    <!-- ✅ Admin Update Telegram ID -->
+                    <form action="/admin/user/update-telegram/{{ staff._id }}" method="POST" class="mb-3 text-start">
+                        <label class="form-label small fw-bold text-muted">Telegram Chat ID</label>
+                        <div class="input-group">
+                            <input type="text" name="telegram_id" class="form-control rounded-start-3" 
+                                   value="{{ staff.telegram_chat_id or '' }}" placeholder="Chat ID...">
+                            <button class="btn btn-outline-secondary rounded-end-3" type="submit">
+                                <i class="bi bi-save"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Delete User -->
+            <div class="card border-0 shadow-sm rounded-4 bg-danger-subtle mb-4">
+                <div class="card-body p-4">
+                    <h6 class="fw-bold text-danger">Danger Zone</h6>
+                    <p class="small text-danger opacity-75 mb-3">Deleting a user is irreversible.</p>
+                    <form action="/admin/user/delete/{{ staff._id }}" method="POST" onsubmit="return confirm('Permanently delete this user?');">
+                        <button class="btn btn-danger w-100 rounded-pill">Delete User</button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Charts -->
+            <div class="card border-0 shadow-sm rounded-4 mb-4">
+                <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
+                    <h6 class="fw-bold">Analytics</h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="mb-4">
+                        <div class="small text-center text-muted mb-2">Task Distribution</div>
+                        <div style="height: 200px;">
+                            <canvas id="typeChart"></canvas>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="mt-4">
+                        <div class="small text-center text-muted mb-2">Completion Status</div>
+                        <div style="height: 200px;">
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="col-md-6">
-          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-success border-4">
-            <div class="text-muted small fw-bold mb-1 text-success">DONE</div>
-            <div class="h2 fw-bold text-success">{{ stats.done }}</div>
-          </div>
+        <!-- Right: Stats & Tasks -->
+        <div class="col-lg-8">
+            <!-- Stats Cards -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="p-4 bg-white rounded-4 shadow-sm h-100 border-start border-4 border-primary">
+                        <div class="text-muted small fw-bold text-uppercase">Total Tasks</div>
+                        <div class="fs-2 fw-bold text-dark mt-2">{{ stats.total }}</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-4 bg-white rounded-4 shadow-sm h-100 border-start border-4 border-success">
+                        <div class="text-muted small fw-bold text-uppercase">Completed</div>
+                        <div class="fs-2 fw-bold text-success mt-2">{{ stats.done }}</div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="p-4 bg-white rounded-4 shadow-sm h-100 border-start border-4 border-warning">
+                        <div class="text-muted small fw-bold text-uppercase">Pending</div>
+                        <div class="fs-2 fw-bold text-warning mt-2">{{ stats.not_yet }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task Lists Tabs -->
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                <div class="card-header bg-white border-bottom border-light px-4 pt-4">
+                    <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active fw-bold" data-bs-toggle="tab" href="#customerTasks">Customer Tasks ({{ task_breakdown.customer.total }})</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#corpTasks">Corp Tasks ({{ task_breakdown.corp.total }})</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#personalTasks">Personal ({{ task_breakdown.personal.total }})</a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body p-0">
+                    <div class="tab-content">
+                        <!-- Customer Tasks -->
+                        <div class="tab-pane fade show active" id="customerTasks">
+                            {% if tasks %}
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0 table-hover">
+                                    <thead class="bg-light small">
+                                        <tr>
+                                            <th class="ps-4">Content</th>
+                                            <th>Status</th>
+                                            <th class="pe-4 text-end">Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for t in tasks %}
+                                        <tr>
+                                            <td class="ps-4 fw-medium">{{ t.todo_content }}</td>
+                                            <td>
+                                                <span class="badge rounded-pill px-3 
+                                                    {% if t.status == 'Done' %}bg-success{% elif t.status == 'Missed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                                    {{ t.status }}
+                                                </span>
+                                            </td>
+                                            <td class="pe-4 text-end small text-muted">{{ t.updated_at.strftime('%d/%m %H:%M') }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                                <div class="text-center text-muted py-5">No customer tasks found.</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Corp Tasks -->
+                        <div class="tab-pane fade" id="corpTasks">
+                            {% if corp_tasks %}
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0 table-hover">
+                                    <thead class="bg-light small">
+                                        <tr>
+                                            <th class="ps-4">Title</th>
+                                            <th>Dept</th>
+                                            <th>Status</th>
+                                            <th class="pe-4 text-end">Deadline</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for t in corp_tasks %}
+                                        <tr>
+                                            <td class="ps-4 fw-medium">{{ t.title }}</td>
+                                            <td><span class="badge bg-light text-dark border">{{ t.department }}</span></td>
+                                            <td>
+                                                <span class="badge rounded-pill px-3 
+                                                    {% if t.status == 'Done' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                                                    {{ t.status }}
+                                                </span>
+                                            </td>
+                                            <td class="pe-4 text-end small text-muted">
+                                                {{ t.due_at.strftime('%d/%m') if t.due_at else '-' }}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                                <div class="text-center text-muted py-5">No company tasks found.</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Personal Tasks -->
+                        <div class="tab-pane fade" id="personalTasks">
+                            {% if personal_tasks %}
+                            <div class="table-responsive">
+                                <table class="table align-middle mb-0 table-hover">
+                                    <thead class="bg-light small">
+                                        <tr>
+                                            <th class="ps-4">Title</th>
+                                            <th>Status</th>
+                                            <th class="pe-4 text-end">Created</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for t in personal_tasks %}
+                                        <tr>
+                                            <td class="ps-4 fw-medium">{{ t.title }}</td>
+                                            <td>
+                                                <span class="badge rounded-pill px-3 
+                                                    {% if t.status == 'Done' %}bg-success{% else %}bg-secondary{% endif %}">
+                                                    {{ t.status }}
+                                                </span>
+                                            </td>
+                                            <td class="pe-4 text-end small text-muted">{{ t.created_at.strftime('%d/%m') }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                                <div class="text-center text-muted py-5">No personal tasks found.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-
-        <div class="col-md-6">
-          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-warning border-4">
-            <div class="text-muted small fw-bold mb-1 text-warning">NOT YET</div>
-            <div class="h2 fw-bold text-warning">{{ stats.not_yet }}</div>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border-start border-danger border-4">
-            <div class="text-muted small fw-bold mb-1 text-danger">MISSED</div>
-            <div class="h2 fw-bold text-danger">{{ stats.missed }}</div>
-          </div>
-        </div>
-      </div>
     </div>
-
-    <div class="col-md-4">
-      <div class="card border-0 shadow-sm rounded-4 p-4 bg-white h-100 d-flex flex-column align-items-center justify-content-center">
-        <h6 class="fw-bold mb-4">Task Distribution</h6>
-        <div style="width:220px;height:220px">
-          <canvas id="performanceChart"></canvas>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CUSTOMER TASKS -->
-  <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" data-task-table="Customer Tasks">
-    <div class="p-3 fw-bold">Customer Tasks</div>
-    <div class="table-responsive">
-      <table class="table align-middle mb-0">
-        <thead class="bg-light small text-muted">
-          <tr>
-            <th class="ps-4">No</th>
-            <th>Content</th>
-            <th class="text-center">Status</th>
-            <th class="pe-4 text-end">Deadline</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for t in tasks %}
-          <tr data-task-type="Customer Tasks">
-            <td class="ps-4">{{ loop.index }}</td>
-            <td>{{ t.todo_content }}</td>
-            <td class="text-center">
-              <span class="badge
-                {% if t.status == 'Done' %}bg-success-subtle text-success
-                {% elif t.status == 'Missed' %}bg-danger-subtle text-danger
-                {% else %}bg-warning-subtle text-warning{% endif %}
-                rounded-pill px-3">
-                {{ t.status }}
-              </span>
-            </td>
-            <td class="pe-4 text-end small text-muted">
-              {{ t.updated_at.strftime('%H:%M %d/%m') if t.updated_at else '—' }}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- PERSONAL TASKS -->
-  <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4" data-task-table="Personal Tasks">
-    <div class="p-3 fw-bold">Personal Tasks</div>
-    <div class="table-responsive">
-      <table class="table align-middle mb-0">
-        <thead class="bg-light small text-muted">
-          <tr>
-            <th class="ps-4">No</th>
-            <th>Content</th>
-            <th class="text-center">Status</th>
-            <th class="pe-4 text-end">Deadline</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for t in personal_tasks %}
-          <tr data-task-type="Personal Tasks">
-            <td class="ps-4">{{ loop.index }}</td>
-            <td>{{ t.title }}</td>
-            <td class="text-center">
-              <span class="badge
-                {% if t.status == 'Done' %}bg-success-subtle text-success
-                {% elif t.status == 'Missed' %}bg-danger-subtle text-danger
-                {% else %}bg-warning-subtle text-warning{% endif %}
-                rounded-pill px-3">
-                {{ t.status }}
-              </span>
-            </td>
-            <td class="pe-4 text-end small text-muted">
-              {{ t.updated_at.strftime('%H:%M %d/%m') if t.updated_at else '—' }}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- COMPANY TASKS -->
-  <div class="card border-0 shadow-sm rounded-4 overflow-hidden" data-task-table="Company Tasks">
-    <div class="p-3 fw-bold">Company Tasks</div>
-    <div class="table-responsive">
-      <table class="table align-middle mb-0">
-        <thead class="bg-light small text-muted">
-          <tr>
-            <th class="ps-4">No</th>
-            <th>Content</th>
-            <th class="text-center">Status</th>
-            <th class="pe-4 text-end">Deadline</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for t in corp_tasks %}
-          <tr data-task-type="Company Tasks">
-            <td class="ps-4">{{ loop.index }}</td>
-            <td>{{ t.title }}</td>
-            <td class="text-center">
-              <span class="badge bg-warning-subtle text-warning rounded-pill px-3">
-                {{ t.status }}
-              </span>
-            </td>
-            <td class="pe-4 text-end small text-muted">
-              {{ t.due_at.strftime('%H:%M %d/%m') if t.due_at else '—' }}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
 </div>
 
-<!-- CHART -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const breakdown = {{ task_breakdown | tojson }};
-new Chart(document.getElementById('performanceChart').getContext('2d'), {
-  type: 'doughnut',
-  data: {
-    labels: ['Customer Tasks','Personal Tasks','Company Tasks'],
-    datasets: [{
-      data: [
-        breakdown.customer.total,
-        breakdown.personal.total,
-        breakdown.corp.total
-      ],
-      backgroundColor: ['#0d6efd','#20c997','#ffc107'],
-      borderWidth: 0,
-      hoverOffset: 12
-    }]
-  },
-  options: {
-    cutout: '72%',
-    plugins: {
-      legend: {
-        position: 'bottom',
-        labels: { usePointStyle:true, padding:18 },
-        onClick:(e,i)=>filterTaskByType(i.text)
-      }
-    }
-  }
-});
+    const dataBreakdown = {{ chart_data.breakdown | tojson }};
+    const dataStatus = {{ chart_data.status | tojson }};
+
+    new Chart(document.getElementById('typeChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Customer', 'Corp', 'Personal'],
+            datasets: [{
+                data: dataBreakdown,
+                backgroundColor: ['#0d6efd', '#6610f2', '#fd7e14'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } }
+        }
+    });
+
+    new Chart(document.getElementById('statusChart'), {
+        type: 'pie',
+        data: {
+            labels: ['Done', 'Pending', 'Missed'],
+            datasets: [{
+                data: dataStatus,
+                backgroundColor: ['#198754', '#ffc107', '#dc3545'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } }
+        }
+    });
+
+    document.addEventListener("DOMContentLoaded", function() {
+        setTimeout(function() {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 1500); 
+    });
 </script>
-
-<script>
-function filterTaskByType(type) {
-  document.querySelectorAll('[data-task-table]').forEach(card => {
-    if (type === 'ALL') {
-      card.style.display = '';
-      return;
-    }
-
-    if (card.dataset.taskTable === type) {
-      card.style.display = '';
-    } else {
-      card.style.display = 'none';
-    }
-  });
-}
-</script>
-
 {% endblock %}

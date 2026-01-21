@@ -43,7 +43,8 @@
                 </thead>
                 <tbody>
                     {% for task in tasks %}
-                    <tr>
+                    <!-- ✅ ADDED: onclick for whole row, cursor pointer -->
+                    <tr style="cursor: pointer;" onclick="window.location.href='/task/detail/{{ task.id }}'">
                         <td class="ps-4">
                             <span class="text-muted fw-bold">{{ loop.index }}</span>
                         </td>
@@ -55,6 +56,16 @@
                                 <span class="text-muted" style="font-size: 0.75rem; margin-top: 2px;">
                                     <i class="bi bi-person-vcard me-1"></i>{{ task.customer_name if task.customer_name else 'N/A' }}
                                 </span>
+                                {% if task.attachment %}
+                                <div class="mt-1">
+                                    <!-- ✅ Stop propagation to prevent row click -->
+                                    <a href="{{ url_for('static', filename='uploads/' + task.attachment) }}" target="_blank" 
+                                       class="badge bg-light text-secondary border text-decoration-none"
+                                       onclick="event.stopPropagation()">
+                                        <i class="bi bi-paperclip me-1"></i>Attachment
+                                    </a>
+                                </div>
+                                {% endif %}
                             </div>
                         </td>
                         <td class="small text-secondary fw-medium">
@@ -78,8 +89,9 @@
                             </div>
                         </td>
                         <td class="text-center">
+                            <!-- ✅ Stop propagation -->
                             <button class="btn p-0 border-0 shadow-none status-toggle-btn"
-                                    onclick="toggleTaskStatus(this, '{{ task.id }}', '{{ task.status }}')">
+                                    onclick="event.stopPropagation(); toggleTaskStatus(this, '{{ task.id }}', '{{ task.status }}')">
                                 {% if task.status == 'Done' %}
                                     <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2">Done</span>
                                 {% elif task.status == 'Missed' %}
@@ -92,11 +104,29 @@
 
                         <td class="pe-4 text-end">
                             {% set can_manage = (current_user.role == 'admin') or (task.user_id|string == current_user.id|string) %}
-                            <div class="dropdown">
+                            <!-- ✅ Stop propagation -->
+                            <div class="dropdown" onclick="event.stopPropagation()">
                                 <button class="btn btn-link text-muted p-0 shadow-none" data-bs-toggle="dropdown">
                                     <i class="bi bi-three-dots-vertical fs-5"></i>
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
+                                    
+                                    <!-- ✅ New Button: Send Telegram (For Customer Task) -->
+                                    <li>
+                                        <form action="/task/send-telegram/{{ task.id }}" method="POST" class="m-0">
+                                            <button type="submit" class="dropdown-item rounded-2">
+                                                <i class="bi bi-telegram me-2 text-primary"></i>Send Telegram
+                                            </button>
+                                        </form>
+                                    </li>
+                                    
+                                    <li>
+                                        <!-- ✅ Link to Detail Page -->
+                                        <a class="dropdown-item rounded-2" href="/task/detail/{{ task.id }}">
+                                            <i class="bi bi-eye me-2"></i>View Detail
+                                        </a>
+                                    </li>
+                                    
                                     {% if can_manage %}
                                     <li>
                                         <button class="dropdown-item rounded-2" data-bs-toggle="modal" data-bs-target="#editTask{{ task.id }}">
@@ -140,7 +170,8 @@
                 <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i> Edit Task</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form action="/task/update/{{ task.id }}" method="POST">
+            <!-- Added enctype for file upload -->
+            <form action="/task/update/{{ task.id }}" method="POST" enctype="multipart/form-data">
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">TODO CONTENT</label>
@@ -182,6 +213,14 @@
                         <input type="datetime-local" name="due_at" class="form-control rounded-3"
                                value="{% if task.due_at %}{{ task.due_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
                     </div>
+                    
+                    <div class="mb-3 mt-3">
+                        <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
+                        <input type="file" name="attachment" class="form-control rounded-3">
+                        {% if task.attachment %}
+                        <div class="small text-success mt-1">Current file: {{ task.attachment }}</div>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
                     <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
@@ -201,7 +240,8 @@
                 <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i> Create Manual Task</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form action="/task/add" method="POST">
+            <!-- Added enctype for file upload -->
+            <form action="/task/add" method="POST" enctype="multipart/form-data">
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">TODO CONTENT</label>
@@ -243,6 +283,11 @@
                     <div class="mb-3 mt-3">
                         <label class="form-label fw-bold text-muted small">DEADLINE (optional)</label>
                         <input type="datetime-local" name="due_at" class="form-control rounded-3">
+                    </div>
+                    
+                    <div class="mb-3 mt-3">
+                        <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
+                        <input type="file" name="attachment" class="form-control rounded-3">
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">

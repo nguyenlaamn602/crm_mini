@@ -8,4 +8,7 @@ class User(UserMixin):
         self.username = user_data.get('username')
         self.password_hash = user_data.get('password_hash')
         self.role = user_data.get('role', 'user')
+        self.department = user_data.get('department')
+        # ✅ Thêm trường Telegram Chat ID
+        self.telegram_chat_id = user_data.get('telegram_chat_id')
         self.created_at = user_data.get('created_at', datetime.now())

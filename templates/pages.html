@@ -3,8 +3,13 @@
 
 {% block content %}
 <div class="container-fluid p-0">
-    <header class="mb-5">
+    <header class="mb-5 d-flex justify-content-between align-items-center">
         <h1 class="fw-bold text-dark">Lead Dashboard</h1>
+        
+        <!-- ✅ Button Update Telegram -->
+        <button class="btn btn-outline-primary rounded-pill btn-sm" data-bs-toggle="modal" data-bs-target="#telegramModal">
+            <i class="bi bi-telegram me-1"></i> Connect Telegram
+        </button>
     </header>
 
     <div class="row g-4">
@@ -45,6 +50,36 @@
                 <div class="display-5 fw-bold text-success mb-1">{{ stats.warehouse }}</div>
                 <div class="text-muted small">Total Customers</div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ Telegram Modal -->
+<div class="modal fade" id="telegramModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold"><i class="bi bi-telegram me-2"></i>Telegram Notification</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/user/update-telegram" method="POST">
+                <div class="modal-body p-4">
+                    <div class="alert alert-light border small text-muted mb-3">
+                        <strong>Hướng dẫn:</strong><br>
+                        1. Chat với Bot: <a href="https://t.me/userinfobot" target="_blank" class="fw-bold">@userinfobot</a><br>
+                        2. Copy dòng "Id" (số)<br>
+                        3. Dán vào ô bên dưới
+                    </div>
+                    <label class="form-label fw-bold text-muted small">YOUR TELEGRAM CHAT ID</label>
+                    <input type="text" name="telegram_id" class="form-control rounded-3" 
+                           value="{{ current_user.telegram_chat_id or '' }}" 
+                           placeholder="Ex: 123456789">
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">Update ID</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

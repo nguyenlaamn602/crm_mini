@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}Task Detail - {{ task.todo_content[:20] }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('view_tasks') }}" class="text-decoration-none text-secondary small fw-bold">
+                <i class="bi bi-arrow-left me-1"></i> Back to List
+            </a>
+            <h3 class="fw-bold mt-2 mb-0 text-dark">Task Details</h3>
+            <span class="text-muted small">ID: {{ task.id }}</span>
+        </div>
+        
+        <!-- Quick Status Actions (Clickable) -->
+        <div>
+            <button id="statusBtn" class="btn p-0 border-0 shadow-none" 
+                    onclick="toggleTaskStatus('{{ task.id }}', '{{ task.status }}')">
+                {% if task.status == 'Done' %}
+                    <span class="badge bg-success fs-6 rounded-pill px-4 py-2 cursor-pointer">Done</span>
+                {% elif task.status == 'Missed' %}
+                    <span class="badge bg-danger fs-6 rounded-pill px-4 py-2 cursor-pointer">Missed</span>
+                {% else %}
+                    <span class="badge bg-info text-dark fs-6 rounded-pill px-4 py-2 cursor-pointer">Not Yet</span>
+                {% endif %}
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Left Column: Main Info -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm rounded-4 h-100">
+                <div class="card-body p-4">
+                    <h5 class="fw-bold text-muted mb-3 text-uppercase small">
+                        Task Content <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                    </h5>
+                    <!-- EDITABLE CONTENT -->
+                    <div id="todo_content" 
+                         class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2"
+                         onclick="makeEditable(this, 'todo_content', 'textarea')">
+                        {{ task.todo_content }}
+                    </div>
+
+                    <hr class="text-muted opacity-25">
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">
+                                Customer 
+                                {% if task.is_normal_task %}
+                                <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                                {% endif %}
+                            </label>
+                            
+                            <!-- EDITABLE CUSTOMER NAME (Only for normal tasks) -->
+                            {% if task.is_normal_task %}
+                            <div id="customer_name" 
+                                 class="fw-semibold editable-field p-1 rounded-2"
+                                 onclick="makeEditable(this, 'customer_name', 'text')">
+                                {{ task.customer_name or 'Unknown' }}
+                            </div>
+                            {% else %}
+                             <div class="fw-semibold text-secondary">
+                                {{ task.customer_name or '---' }}
+                            </div>
+                            {% endif %}
+                            
+                            {% if task.customer_psid %}
+                                <a href="/customer/{{ task.customer_psid }}" class="text-decoration-none small text-primary d-block mt-1">
+                                    View Customer Profile
+                                </a>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">Assignee</label>
+                            <div class="d-flex align-items-center mt-1">
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold;">
+                                    {{ task.assignee[0].upper() if task.assignee else '?' }}
+                                </div>
+                                <span>{{ task.assignee }}</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">
+                                Due Date <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                            </label>
+                            <!-- EDITABLE DUE DATE -->
+                            <div id="due_at" 
+                                 class="fw-semibold text-danger editable-field p-1 rounded-2"
+                                 onclick="makeEditable(this, 'due_at', 'datetime-local')"
+                                 data-value="{{ task.due_at.strftime('%Y-%m-%dT%H:%M') if task.due_at else '' }}">
+                                <i class="bi bi-calendar-event me-1"></i>
+                                <span>{{ task.due_at.strftime('%H:%M %d/%m/%Y') if task.due_at else 'Set Deadline' }}</span>
+                            </div>
+                        </div>
+                         <div class="col-md-6">
+                            <label class="small text-muted fw-bold">Last Updated</label>
+                            <div class="text-muted">
+                                {{ task.updated_at.strftime('%H:%M %d/%m') if task.updated_at else '---' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Attachment & Actions -->
+        <div class="col-lg-4">
+            <!-- Attachment Card -->
+            <div class="card border-0 shadow-sm rounded-4 mb-4">
+                <div class="card-header bg-white border-0 pt-4 pb-0 px-4">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-paperclip me-2"></i>Attachment</h6>
+                </div>
+                <div class="card-body p-4">
+                    {% if task.attachment %}
+                        <div class="p-3 bg-light rounded-3 border mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-file-earmark-text fs-3 text-primary me-3"></i>
+                                <div class="overflow-hidden">
+                                    <div class="fw-bold text-truncate" title="{{ task.attachment }}">{{ task.attachment }}</div>
+                                    <a href="{{ url_for('static', filename='uploads/' + task.attachment) }}" target="_blank" class="small text-decoration-none">View / Download</a>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted py-3">
+                            <i class="bi bi-file-earmark-x fs-1 opacity-25"></i>
+                            <p class="small mt-2">No file attached</p>
+                        </div>
+                    {% endif %}
+
+                    <hr class="my-3">
+
+                    <!-- Upload Form (Always visible) -->
+                    <form action="/task/detail/upload/{{ task.id }}" method="POST" enctype="multipart/form-data">
+                        <label class="form-label small fw-bold text-secondary">
+                            {% if task.attachment %}Replace File{% else %}Upload File{% endif %}
+                        </label>
+                        <input type="file" name="attachment" class="form-control form-control-sm mb-3" required>
+                        <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill">
+                            <i class="bi bi-cloud-upload me-1"></i> Upload
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Meta Info / Actions (Simplified) -->
+             <div class="card border-0 shadow-sm rounded-4 bg-light">
+                <div class="card-body p-4">
+                    <div class="d-grid gap-2">
+                         <!-- Dynamically determine delete route based on task ID -->
+                         {% if current_user.role == 'admin' %}
+                            {% set delete_url = '/task/delete/' ~ task.id %}
+                            {% if task.id.startswith('corp_') %}
+                                {% set delete_url = '/corp-task/delete/' ~ task.id %}
+                            {% elif task.id.startswith('ptask_') %}
+                                {% set delete_url = '/personal-task/delete/' ~ task.id %}
+                            {% endif %}
+                            
+                            <form action="{{ delete_url }}" method="POST" onsubmit="return confirm('Permanently delete this task?')">
+                                <button class="btn btn-link text-danger w-100 text-decoration-none">Delete Task</button>
+                            </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Visual hint that fields are editable */
+    .editable-field {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+    }
+    .editable-field:hover {
+        background-color: #f8f9fa;
+        border-color: #dee2e6;
+    }
+    /* Flashing effect on save */
+    @keyframes flash-success {
+        0% { background-color: #d1e7dd; }
+        100% { background-color: transparent; }
+    }
+    .flash-saved {
+        animation: flash-success 1s ease-out;
+    }
+    .cursor-pointer {
+        cursor: pointer;
+    }
+</style>
+
+<script>
+    let isEditing = false;
+    const TASK_ID = "{{ task.id }}";
+
+    // --- 1. Inline Edit Logic ---
+    function makeEditable(element, fieldName, type) {
+        if (isEditing) return; // Prevent multiple edits at once
+        isEditing = true;
+
+        const currentValue = element.innerText.trim();
+        const rawValue = element.getAttribute('data-value') || currentValue; 
+
+        let input;
+
+        if (type === 'textarea') {
+            input = document.createElement('textarea');
+            input.rows = 4;
+            input.value = currentValue;
+        } else if (type === 'datetime-local') {
+            input = document.createElement('input');
+            input.type = 'datetime-local';
+            input.value = rawValue; 
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentValue;
+        }
+
+        input.className = 'form-control shadow-sm';
+        
+        element.innerHTML = '';
+        element.appendChild(input);
+        input.focus();
+
+        input.addEventListener('blur', function() {
+            saveField(element, fieldName, input.value, type);
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && type !== 'textarea') {
+                input.blur();
+            }
+        });
+    }
+
+    async function saveField(element, fieldName, value, type) {
+        let displayValue = value;
+        
+        if (type === 'datetime-local') {
+             if (value) {
+                const date = new Date(value);
+                const h = String(date.getHours()).padStart(2,'0');
+                const m = String(date.getMinutes()).padStart(2,'0');
+                const d = String(date.getDate()).padStart(2,'0');
+                const mo = String(date.getMonth()+1).padStart(2,'0');
+                const y = date.getFullYear();
+                displayValue = `<i class="bi bi-calendar-event me-1"></i>${h}:${m} ${d}/${mo}/${y}`;
+                element.setAttribute('data-value', value);
+             } else {
+                 displayValue = 'Set Deadline';
+             }
+        } else if (value.trim() === '') {
+            displayValue = 'Empty'; 
+        }
+
+        element.innerHTML = displayValue;
+        isEditing = false;
+
+        try {
+            const payload = {};
+            payload[fieldName] = value;
+
+            const res = await fetch(`/task/update/${TASK_ID}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(payload)
+            });
+            
+            if (res.ok) {
+                element.classList.add('flash-saved');
+                setTimeout(() => element.classList.remove('flash-saved'), 1000);
+            } else {
+                alert("Failed to save. Please try again.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Network error.");
+        }
+    }
+
+    // --- 2. Status Toggle Logic ---
+    async function toggleTaskStatus(taskId, currentStatus) {
+        let nextStatus = 'Not_yet';
+        if (currentStatus === 'Not_yet' || currentStatus === 'New' || currentStatus === 'Unreceived') nextStatus = 'Done';
+        else if (currentStatus === 'Done') nextStatus = 'Missed';
+        
+        const btn = document.getElementById('statusBtn');
+        btn.style.opacity = '0.5';
+        btn.disabled = true;
+
+        try {
+            // Use existing quick-update endpoint
+            let url = `/task/quick-update/${taskId}`;
+            
+            // Check ID prefix to determine route (Simple heuristic based on your ID generation)
+            if (taskId.startsWith('corp_')) {
+                url = `/corp-task/status/${taskId}`; // Corp task uses different route/logic
+            } else if (taskId.startsWith('ptask_')) {
+                url = `/personal-task/quick-update/${taskId}`;
+            }
+
+            const payload = taskId.startsWith('corp_') ? {status: nextStatus} : (new FormData());
+            
+            let options = {};
+            
+            if (taskId.startsWith('corp_')) {
+                 options = {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify(payload)
+                };
+            } else {
+                // Form Data for others (based on old code)
+                const formData = new FormData();
+                formData.append('status', nextStatus);
+                options = {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                };
+            }
+
+            const response = await fetch(url, options);
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                window.location.reload(); // Reload to reflect status change visually
+            } else {
+                alert('Could not update status.');
+                btn.style.opacity = '1';
+                btn.disabled = false;
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            btn.style.opacity = '1';
+            btn.disabled = false;
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Pancake Broadcast</h5>
+            <span class="badge bg-secondary">User Token Active</span>
+        </div>
+
+        <div class="card-body">
+
+            <!-- PAGE + SEARCH -->
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="fw-semibold">1. Select Fanpage</label>
+                    <select id="pageSelect" class="form-select" onchange="loadConversations()">
+                        <option value="">-- Loading fanpages... --</option>
+                    </select>
+                </div>
+
+                <div class="col-md-8">
+                    <label class="fw-semibold">
+                        2. Search Customers (selection will be preserved)
+                    </label>
+                    <input type="text"
+                           id="tableSearch"
+                           class="form-control"
+                           placeholder="Search customer name..."
+                           onkeyup="filterTable()">
+                </div>
+            </div>
+
+            <!-- CONVERSATION TABLE -->
+            <div class="table-responsive border rounded" style="max-height: 400px;">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th width="40">
+                                <input type="checkbox" onclick="toggleAll(this)">
+                            </th>
+                            <th>Customer Name</th>
+                            <th>Conversation ID</th>
+                            <th>Created Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="convoBody">
+                        <tr>
+                            <td colspan="4" class="text-center text-muted">
+                                Please select a fanpage to load conversations
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- SEND PANEL -->
+            <div class="mt-4 p-3 bg-light border rounded">
+                <h6 class="fw-semibold mb-2">
+                    Broadcast Message (<span id="countSelected">0</span> selected)
+                </h6>
+
+                <div id="namePreview" class="small text-muted mb-2"></div>
+
+                <textarea id="msgBody"
+                          class="form-control mb-2"
+                          rows="3"
+                          placeholder="Message content..."></textarea>
+
+                <input type="file"
+                       id="msgImage"
+                       class="form-control mb-3">
+
+                <button class="btn btn-primary w-100"
+                        id="sendBtn"
+                        onclick="sendBulk()">
+                    Send Broadcast
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+let allConvos = [];
+let selectedItems = new Map();
+let currentPageToken = "";
+
+/* LOAD PAGES */
+fetch('/api/broadcast/pages')
+    .then(r => r.json())
+    .then(data => {
+        const select = document.getElementById('pageSelect');
+        select.innerHTML = '<option value="">-- Select Fanpage --</option>';
+        data.pages.forEach(p => {
+            select.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+        });
+    });
+
+async function loadConversations() {
+    const pageId = document.getElementById('pageSelect').value;
+    if (!pageId) return;
+
+    const tbody = document.getElementById('convoBody');
+    tbody.innerHTML =
+        '<tr><td colspan="4" class="text-center text-muted">Loading conversations...</td></tr>';
+
+    const r = await fetch(`/api/broadcast/conversations/${pageId}`);
+    const data = await r.json();
+
+    allConvos = data.conversations;
+    currentPageToken = data.page_token;
+    renderTable(allConvos);
+}
+
+function renderTable(data) {
+    const tbody = document.getElementById('convoBody');
+    tbody.innerHTML = data.map(c => {
+        const name =
+            c.customers?.[0]?.name ||
+            c.participants?.[0]?.name ||
+            "Unknown";
+
+        return `
+        <tr>
+            <td>
+                <input type="checkbox"
+                       value="${c.id}"
+                       data-name="${name}"
+                       onchange="syncCheck(this)"
+                       ${selectedItems.has(c.id) ? 'checked' : ''}>
+            </td>
+            <td>${name}</td>
+            <td><code>${c.id}</code></td>
+            <td>${c.inserted_at || ''}</td>
+        </tr>`;
+    }).join('');
+}
+
+function filterTable() {
+    const q = document.getElementById('tableSearch').value.toLowerCase();
+    const filtered = allConvos.filter(c => {
+        const name =
+            (c.customers?.[0]?.name ||
+             c.participants?.[0]?.name ||
+             "").toLowerCase();
+        return name.includes(q);
+    });
+    renderTable(filtered);
+}
+
+function syncCheck(cb) {
+    if (cb.checked)
+        selectedItems.set(cb.value, cb.getAttribute('data-name'));
+    else
+        selectedItems.delete(cb.value);
+
+    document.getElementById('countSelected').innerText = selectedItems.size;
+    document.getElementById('namePreview').innerText =
+        Array.from(selectedItems.values()).join(", ");
+}
+
+function toggleAll(master) {
+    document.querySelectorAll('#convoBody input[type="checkbox"]').forEach(cb => {
+        cb.checked = master.checked;
+        syncCheck(cb);
+    });
+}
+
+async function sendBulk() {
+    const ids = Array.from(selectedItems.keys());
+    if (ids.length === 0) return alert("Please select at least one conversation.");
+
+    const btn = document.getElementById('sendBtn');
+    btn.disabled = true;
+    btn.innerText = "Sending...";
+
+    const formData = new FormData();
+    formData.append('page_id', document.getElementById('pageSelect').value);
+    formData.append('page_token', currentPageToken);
+    formData.append('message', document.getElementById('msgBody').value);
+    ids.forEach(id => formData.append('ids[]', id));
+
+    const img = document.getElementById('msgImage').files[0];
+    if (img) formData.append('image', img);
+
+    const r = await fetch('/api/broadcast/send', {
+        method: 'POST',
+        body: formData
+    });
+    const res = await r.json();
+
+    alert(`Successfully sent to ${res.success}/${res.total} conversations.`);
+    btn.disabled = false;
+    btn.innerText = "Send Broadcast";
+}
+</script>
+{% endblock %}

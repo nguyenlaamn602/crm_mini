@@ -22,7 +22,7 @@
             --primary-color: #4361ee;
             --bg-body: #f8fafc;
             --sidebar-bg: #ffffff;
-            --transition-speed: 0.3s;
+            --transition-speed: 0.25s;
         }
 
         body {
@@ -31,26 +31,22 @@
             overflow-x: hidden;
         }
 
-.sidebar {
-    width: var(--sidebar-width);
-    height: 100vh;
-    position: fixed;
-    left: 0;
-    top: 0;
-    background: var(--sidebar-bg);
-    border-right: 1px solid #e2e8f0;
-    padding: 1.25rem;
-    z-index: 1000;
-
-    display: flex;
-    flex-direction: column;
-
-    overflow-y: auto;        /* ✅ CHO SCROLL */
-    overflow-x: hidden;      /* ✅ KHÔNG TRÀN NGANG */
-
-    transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
-}
-
+        .sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            background: var(--sidebar-bg);
+            border-right: 1px solid #e2e8f0;
+            padding: 1.25rem;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: all var(--transition-speed) ease;
+        }
 
         .sidebar.collapsed {
             width: var(--sidebar-collapsed-width);
@@ -60,7 +56,7 @@
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 2rem;
-            transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all var(--transition-speed) ease;
         }
 
         .main-content.expanded {
@@ -115,17 +111,6 @@
             margin-right: 12px;
         }
 
-        .sidebar.collapsed .nav-link i {
-            margin-right: 0;
-        }
-
-        .sidebar.collapsed .nav-text,
-        .sidebar.collapsed .brand-text,
-        .sidebar.collapsed .section-title,
-        .sidebar.collapsed .user-details {
-            display: none;
-        }
-
         .nav-link:hover {
             background: #f1f5f9;
             color: var(--primary-color);
@@ -136,12 +121,38 @@
             color: #fff;
         }
 
-        .section-title {
+        .parent-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 14px;
+            border-radius: 12px;
+            color: #475569;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 4px;
+            user-select: none;
+        }
+
+        .parent-item:hover {
+            background: #f1f5f9;
+            color: var(--primary-color);
+        }
+
+        .parent-arrow {
+            margin-left: auto;
+            transition: transform 0.25s ease;
+            font-size: 0.9rem;
             color: #94a3b8;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            margin: 1.5rem 0 0.75rem 14px;
+        }
+
+        .parent-arrow.rotate {
+            transform: rotate(90deg);
+        }
+
+        .sidebar.collapsed .nav-text,
+        .sidebar.collapsed .brand-text,
+        .sidebar.collapsed .user-details {
+            display: none;
         }
 
         .user-section {
@@ -181,7 +192,6 @@
         <i class="bi bi-chevron-left" id="toggle-icon"></i>
     </button>
 
-    <!-- BRAND -->
     <a href="/" class="brand">
         <i class="bi bi-cpu-fill"></i>
         <span class="brand-text">HUB THG</span>
@@ -196,81 +206,74 @@
         </a>
 
         <!-- LEADS -->
-        <div class="section-title">Leads</div>
+        <div class="parent-item" id="leads-toggle">
+            <span class="nav-text">LEADS</span>
+            <i class="bi bi-chevron-right parent-arrow" id="leads-arrow"></i>
+        </div>
 
-        <a href="/sector/Pod_Drop" class="nav-link {% if sector_id == 'Pod_Drop' %}active{% endif %}">
-            <i class="bi bi-box-seam"></i>
-            <span class="nav-text">POD / Dropship</span>
+        <a href="/sector/Pod_Drop" class="nav-link {% if sector_id == 'Pod_Drop' %}active{% endif %}" data-leads-item>
+            <i class="bi bi-box-seam"></i><span class="nav-text">POD / Dropship</span>
         </a>
-
-        <a href="/sector/Express" class="nav-link {% if sector_id == 'Express' %}active{% endif %}">
-            <i class="bi bi-lightning-charge"></i>
-            <span class="nav-text">Express</span>
+        <a href="/sector/Express" class="nav-link {% if sector_id == 'Express' %}active{% endif %}" data-leads-item>
+            <i class="bi bi-lightning-charge"></i><span class="nav-text">Express</span>
         </a>
-
-        <a href="/sector/Warehouse" class="nav-link {% if sector_id == 'Warehouse' %}active{% endif %}">
-            <i class="bi bi-house-door"></i>
-            <span class="nav-text">Warehouse</span>
+        <a href="/sector/Warehouse" class="nav-link {% if sector_id == 'Warehouse' %}active{% endif %}" data-leads-item>
+            <i class="bi bi-house-door"></i><span class="nav-text">Warehouse</span>
         </a>
 
         <!-- TASKS -->
-        <div class="section-title">Tasks</div>
+        <div class="parent-item" id="tasks-toggle">
+            <span class="nav-text">TASKS</span>
+            <i class="bi bi-chevron-right parent-arrow" id="tasks-arrow"></i>
+        </div>
 
-        <a href="/personal-tasks"
-   class="nav-link {% if request.path.startswith('/personal-tasks') %}active{% endif %}">
-    <i class="bi bi-person-check"></i>
-    <span class="nav-text">My Tasks</span>
-</a>
-
-        <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}">
-            <i class="bi bi-clipboard-check"></i>
-            <span class="nav-text">Customers Tasks</span>
+        <a href="/personal-tasks" class="nav-link {% if request.path.startswith('/personal-tasks') %}active{% endif %}" data-tasks-item>
+            <i class="bi bi-person-check"></i><span class="nav-text">My Tasks</span>
         </a>
-
-        <a href="/corp-tasks" class="nav-link {% if request.path.startswith('/corp-tasks') %}active{% endif %}">
-            <i class="bi bi-building"></i>
-            <span class="nav-text">Corporate Tasks</span>
+        <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}" data-tasks-item>
+            <i class="bi bi-clipboard-check"></i><span class="nav-text">Customers Tasks</span>
+        </a>
+        <a href="/corp-tasks" class="nav-link {% if request.path.startswith('/corp-tasks') %}active{% endif %}" data-tasks-item>
+            <i class="bi bi-building"></i><span class="nav-text">Corporate Tasks</span>
         </a>
 
         <!-- OPERATIONS -->
         {% if current_user.role == 'admin' %}
-        <div class="section-title">Operations</div>
+        <div class="parent-item" id="ops-toggle">
+            <span class="nav-text">OPERATIONS</span>
+            <i class="bi bi-chevron-right parent-arrow" id="ops-arrow"></i>
+        </div>
 
-        <a href="/pancake/broadcast"
-           class="nav-link {% if request.path.startswith('/pancake/broadcast') %}active{% endif %}">
-            <i class="bi bi-megaphone-fill"></i>
-            <span class="nav-text">Pancake Broadcast</span>
+        <a href="/broadcast" class="nav-link {% if request.path.startswith('/broadcast') %}active{% endif %}" data-ops-item>
+            <i class="bi bi-megaphone-fill"></i><span class="nav-text">Pancake Broadcast</span>
         </a>
         {% endif %}
 
         <!-- ADMIN -->
         {% if current_user.role == 'admin' %}
-        <div class="section-title">Administration</div>
+        <div class="parent-item" id="admin-toggle">
+            <span class="nav-text">ADMINISTRATION</span>
+            <i class="bi bi-chevron-right parent-arrow" id="admin-arrow"></i>
+        </div>
 
-        <a href="/admin/users" class="nav-link {% if request.path == '/admin/users' %}active{% endif %}">
-            <i class="bi bi-people-fill"></i>
-            <span class="nav-text">User Management</span>
+        <a href="/admin/users" class="nav-link {% if request.path == '/admin/users' %}active{% endif %}" data-admin-item>
+            <i class="bi bi-people-fill"></i><span class="nav-text">User Management</span>
         </a>
         {% endif %}
-
     </div>
 
-    <!-- USER -->
     {% if current_user.is_authenticated %}
     <div class="user-section">
         <div class="user-profile-brief">
             <div class="avatar">{{ current_user.username[0].upper() }}</div>
             <div class="user-details ms-3">
                 <div class="fw-bold small">{{ current_user.username }}</div>
-                <div class="text-muted" style="font-size:0.65rem;">
-                    {{ current_user.role.upper() }}
-                </div>
+                <div class="text-muted" style="font-size:0.65rem;">{{ current_user.role.upper() }}</div>
             </div>
         </div>
 
         <a href="/logout" class="nav-link text-danger">
-            <i class="bi bi-box-arrow-right"></i>
-            <span class="nav-text">Sign Out</span>
+            <i class="bi bi-box-arrow-right"></i><span class="nav-text">Sign Out</span>
         </a>
     </div>
     {% endif %}
@@ -283,27 +286,58 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    const sidebar = document.getElementById('sidebar');
-    const mainContent = document.getElementById('main-content');
-    const toggleBtn = document.getElementById('sidebar-toggle');
-    const toggleIcon = document.getElementById('toggle-icon');
+/* SIDEBAR COLLAPSE */
+const sidebar = document.getElementById('sidebar');
+const mainContent = document.getElementById('main-content');
+const toggleBtn = document.getElementById('sidebar-toggle');
+const toggleIcon = document.getElementById('toggle-icon');
 
-    function updateUI(collapsed) {
-        sidebar.classList.toggle('collapsed', collapsed);
-        mainContent.classList.toggle('expanded', collapsed);
-        toggleIcon.className = collapsed
-            ? 'bi bi-chevron-right'
-            : 'bi bi-chevron-left';
+function updateUI(collapsed) {
+    sidebar.classList.toggle('collapsed', collapsed);
+    mainContent.classList.toggle('expanded', collapsed);
+    toggleIcon.className = collapsed ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+}
+
+updateUI(localStorage.getItem('sidebar-collapsed') === 'true');
+
+toggleBtn.onclick = () => {
+    const collapsed = !sidebar.classList.contains('collapsed');
+    updateUI(collapsed);
+    localStorage.setItem('sidebar-collapsed', collapsed);
+};
+
+/* PARENT TOGGLE LOGIC */
+document.addEventListener('DOMContentLoaded', () => {
+    function setup(toggleId, itemSelector, arrowId, key, autoOpen) {
+        const toggle = document.getElementById(toggleId);
+        const items = document.querySelectorAll(itemSelector);
+        const arrow = document.getElementById(arrowId);
+
+        let open = localStorage.getItem(key);
+        open = open === null ? autoOpen : open === 'true';
+
+        function apply() {
+            items.forEach(el => el.style.display = open ? '' : 'none');
+            arrow.classList.toggle('rotate', open);
+            localStorage.setItem(key, open);
+        }
+
+        apply();
+        toggle.onclick = () => { open = !open; apply(); };
     }
 
-    const saved = localStorage.getItem('sidebar-collapsed') === 'true';
-    updateUI(saved);
+    setup('leads-toggle','[data-leads-item]','leads-arrow','leads-open',
+        "{{ sector_id }}" === "Pod_Drop" || "{{ sector_id }}" === "Express" || "{{ sector_id }}" === "Warehouse");
 
-    toggleBtn.onclick = () => {
-        const collapsed = !sidebar.classList.contains('collapsed');
-        updateUI(collapsed);
-        localStorage.setItem('sidebar-collapsed', collapsed);
-    };
+    setup('tasks-toggle','[data-tasks-item]','tasks-arrow','tasks-open',
+        "{{ request.path }}".includes("tasks"));
+
+    setup('ops-toggle','[data-ops-item]','ops-arrow','ops-open',
+        "{{ request.path }}".startsWith("/broadcast"));
+
+    setup('admin-toggle','[data-admin-item]','admin-arrow','admin-open',
+        "{{ request.path }}".startsWith("/admin"));
+});
 </script>
 
 </body>

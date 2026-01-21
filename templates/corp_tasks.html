@@ -106,7 +106,8 @@
         </thead>
         <tbody>
           {% for t in corp_tasks %}
-          <tr>
+          <!-- Clickable Row -->
+          <tr style="cursor: pointer;" onclick="window.location.href='/task/detail/{{ t.id }}'">
             <td class="ps-4"><span class="text-muted fw-bold">{{ loop.index }}</span></td>
 
             <td style="max-width: 420px;">
@@ -121,6 +122,15 @@
                   <i class="bi bi-person-check me-1"></i>By: {{ t.assigned_by or '---' }}
                   {% if t.assigned_at %} • {{ t.assigned_at.strftime('%d/%m %H:%M') }}{% endif %}
                 </span>
+                {% if t.attachment %}
+                <div class="mt-1">
+                    <a href="{{ url_for('static', filename='uploads/' + t.attachment) }}" target="_blank" 
+                       class="badge bg-light text-secondary border text-decoration-none"
+                       onclick="event.stopPropagation()">
+                        <i class="bi bi-paperclip me-1"></i>Attachment
+                    </a>
+                </div>
+                {% endif %}
               </div>
             </td>
 
@@ -161,7 +171,7 @@
               {% set can_change = (current_user.role == 'admin') or ((current_user.id|string) in assigned_ids) %}
 
               {% if can_change %}
-                <div class="dropdown">
+                <div class="dropdown" onclick="event.stopPropagation()">
                   <button class="btn btn-sm rounded-pill px-3 dropdown-toggle {{ status_color.get(t.status,'btn-light') }}"
                           data-bs-toggle="dropdown">
                     {{ corp_status_labels.get(t.status, t.status) }}
@@ -184,18 +194,27 @@
             </td>
 
             <td class="pe-4 text-end">
-              <div class="dropdown">
+              <div class="dropdown" onclick="event.stopPropagation()">
                 <button class="btn btn-link text-muted p-0 shadow-none" data-bs-toggle="dropdown">
                   <i class="bi bi-three-dots-vertical fs-5"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
-                  {# --- THÊM NÚT SEND TẠI ĐÂY --- #}
+                  
+                  {# --- ✅ NÚT SEND TELEGRAM --- #}
                   <li>
-                    <button class="dropdown-item rounded-2" onclick="alert('API out of token')">
-                      <i class="bi bi-send me-2"></i>Send
-                    </button>
+                    <form action="/corp-task/send-telegram/{{ t.id }}" method="POST" class="m-0">
+                        <button class="dropdown-item rounded-2">
+                            <i class="bi bi-telegram me-2 text-primary"></i>Send Telegram
+                        </button>
+                    </form>
                   </li>
                   {# ---------------------------- #}
+
+                  <li>
+                    <a class="dropdown-item rounded-2" href="/task/detail/{{ t.id }}">
+                        <i class="bi bi-eye me-2"></i>View Detail
+                    </a>
+                  </li>
 
                   {% if can_change %}
                     <li>
@@ -232,7 +251,7 @@
   </div>
 </div>
 
-{# Modals and Scripts (Giữ nguyên toàn bộ logic hiện có) #}
+{# Modals and Scripts #}
 <div class="modal fade" id="addCorpTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -240,8 +259,8 @@
         <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i>Create Company Task</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-
-      <form action="/corp-task/add" method="POST" id="addCorpTaskForm">
+      
+      <form action="/corp-task/add" method="POST" id="addCorpTaskForm" enctype="multipart/form-data">
         <div class="modal-body p-4">
           <div class="mb-3">
             <label class="form-label fw-bold text-muted small">TASK CONTENT</label>
@@ -278,11 +297,16 @@
             <label class="form-label fw-bold text-muted small">DEADLINE</label>
             <input type="datetime-local" name="due_at" class="form-control rounded-3" required>
           </div>
+          
+          <div class="mb-3 mt-3">
+             <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
+             <input type="file" name="attachment" class="form-control rounded-3">
+          </div>
         </div>
 
         <div class="modal-footer border-0 bg-light px-4 py-3">
           <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create & Notify</button>
         </div>
       </form>
     </div>
@@ -321,8 +345,8 @@
         <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Company Task</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-
-      <form action="/corp-task/update/{{ t.id }}" method="POST" class="editCorpTaskForm">
+      
+      <form action="/corp-task/update/{{ t.id }}" method="POST" class="editCorpTaskForm" enctype="multipart/form-data">
         <div class="modal-body p-4">
           <div class="mb-3">
             <label class="form-label fw-bold text-muted small">TASK CONTENT</label>
@@ -360,6 +384,14 @@
               {% endfor %}
             </div>
           </div>
+          
+          <div class="mb-3 mt-3">
+             <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
+             <input type="file" name="attachment" class="form-control rounded-3">
+             {% if t.attachment %}
+                <div class="small text-success mt-1">Current file: {{ t.attachment }}</div>
+             {% endif %}
+          </div>
         </div>
 
         <div class="modal-footer border-0 bg-light px-4 py-3">
@@ -375,7 +407,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // 1. BIỂU ĐỒ VÀ THỐNG KÊ (GIỮ NGUYÊN)
+  // Chart Config (Keep existing)
   const _corpTasks = {{ corp_tasks_chart | tojson }};
   const currentDept = '{{ request.args.get("dept", "ALL") }}';
 
@@ -399,15 +431,11 @@
           borderWidth: 0
         }]
       },
-      options: {
-        cutout: '75%',
-        plugins: { legend: { position: 'bottom' } }
-      }
+      options: { cutout: '75%', plugins: { legend: { position: 'bottom' } } }
     });
   }
   buildStats();
 
-  // 2. CẬP NHẬT TRẠNG THÁI
   async function updateCorpStatus(taskId, status) {
     try {
       const res = await fetch(`/corp-task/status/${taskId}`, {
@@ -421,10 +449,9 @@
     } catch(e) { console.error(e); }
   }
 
-  // 3. ADMIN NOTIFICATION POLLING
+  // ... (Admin polling kept same) ...
   {% if current_user.role == 'admin' %}
   const dismissedNotifications = new Set(); 
-
   function adminConfirmDelete(taskId) {
     if (confirm('Xác nhận xóa task này ngay lập tức?')) {
       const form = document.createElement('form');
@@ -434,7 +461,6 @@
       form.submit();
     }
   }
-
   setInterval(async () => {
     try {
       const res = await fetch('/api/admin/corp-requests');
@@ -454,12 +480,8 @@
                   <div class="mb-2"><strong>Task:</strong> ${req.title}</div>
                   <div class="small text-muted mb-3">Lý do: ${req.reason}</div>
                   <div class="d-flex gap-2">
-                    <button class="btn btn-danger btn-sm rounded-pill flex-grow-1" onclick="adminConfirmDelete('${req.id}')">
-                      Xác nhận Xóa
-                    </button>
-                    <button class="btn btn-light btn-sm rounded-pill" onclick="dismissedNotifications.add('${req.id}'); this.parentElement.parentElement.parentElement.remove()">
-                      Bỏ qua
-                    </button>
+                    <button class="btn btn-danger btn-sm rounded-pill flex-grow-1" onclick="adminConfirmDelete('${req.id}')">Xác nhận</button>
+                    <button class="btn btn-light btn-sm rounded-pill" onclick="dismissedNotifications.add('${req.id}'); this.parentElement.parentElement.parentElement.remove()">Bỏ qua</button>
                   </div>
                 </div>
               </div>`;
@@ -471,7 +493,6 @@
   }, 3000);
   {% endif %}
 
-  // 4. VALIDATION
   (function () {
     const addForm = document.getElementById('addCorpTaskForm');
     if (addForm) {

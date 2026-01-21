@@ -1,83 +1,110 @@
 {% extends "base.html" %}
-{% block title %}User Management - THG CRM{% endblock %}
+{% block title %}User Management{% endblock %}
 
 {% block content %}
 <div class="container-fluid p-0">
     <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-4 rounded-4 shadow-sm">
         <div>
-            <h4 class="mb-1 fw-bold text-dark">👥 User Management Dashboard</h4>
-            <p class="text-muted small mb-0">Control system access, roles, and staff workload</p>
+            <h4 class="mb-1 fw-bold text-dark">User Management</h4>
+            <p class="text-muted small mb-0">Manage system users, roles, and departments.</p>
         </div>
-        <div class="badge bg-primary-subtle text-primary border border-primary-subtle px-4 py-2 rounded-pill">
-            Total Staff: {{ users|length }}
+        <div>
+            <!-- Button trigger modal -->
+            <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                <i class="bi bi-person-plus me-2"></i>Add New User
+            </button>
         </div>
     </div>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div id="flash-messages">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} rounded-4 mb-4 shadow-sm border-0 fade show" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
 
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
         <div class="table-responsive">
             <table class="table align-middle mb-0 table-hover bg-white">
-                <thead class="bg-light text-uppercase small text-muted" style="letter-spacing: 0.05rem;">
+                <thead class="bg-light text-uppercase small text-muted">
                     <tr>
-                        <th class="ps-4 py-3">Staff Name</th>
-                        <th class="text-center">Pending Tasks</th>
-                        <th>System Role</th>
-                        <th>Joined Date</th>
-                        <th class="pe-4 text-end">Actions</th>
+                        <th class="ps-4 py-3">#</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Department</th>
+                        <th class="text-center">Active Tasks</th>
+                        <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for user in users %}
-                    <tr>
-                        <td class="ps-4">
+                    <!-- Added onclick to row, added cursor-pointer style -->
+                    <tr style="cursor: pointer;" onclick="window.location.href='/admin/user/detail/{{ user.id }}'">
+                        <td class="ps-4 text-muted fw-bold">{{ loop.index }}</td>
+                        <td>
                             <div class="d-flex align-items-center">
-                                <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold me-3 shadow-sm" style="width: 42px; height: 42px;">
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; font-weight: bold;">
                                     {{ user.username[0].upper() }}
                                 </div>
                                 <div>
-                                    <div class="fw-bold text-dark">
-                                        <a href="/admin/user/detail/{{ user.id }}" class="text-decoration-none text-dark staff-link">
-                                            {{ user.username }}
-                                        </a>
-                                    </div>
-                                    <small class="text-muted">ID: #{{ user.id[:8] }}...</small>
+                                    <div class="fw-bold text-dark">{{ user.username }}</div>
+                                    <div class="small text-muted">ID: {{ user.id }}</div>
                                 </div>
                             </div>
                         </td>
-                        <td class="text-center">
-                            {% if user.pending_tasks > 0 %}
-                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-3">
-                                    {{ user.pending_tasks }} Tasks Pending
-                                </span>
+                        <td>
+                            {% if user.role == 'admin' %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3">Admin</span>
                             {% else %}
-                                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3">
-                                    All Done
-                                </span>
+                                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3">User</span>
                             {% endif %}
                         </td>
                         <td>
-                            <form action="/admin/user/update_role/{{ user.id }}" method="POST" class="d-inline-flex align-items-center">
-                                <select name="role" class="form-select form-select-sm rounded-pill px-3 border-light bg-light fw-bold" onchange="this.form.submit()" {% if user.id == current_user.id %}disabled{% endif %}>
-                                    <option value="user" {% if user.role == 'user' %}selected{% endif %}>USER</option>
-                                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>ADMIN</option>
+                            <!-- Form update department - stopPropagation to prevent row click -->
+                            <form action="/admin/user/update_department/{{ user.id }}" method="POST" onclick="event.stopPropagation()">
+                                <select name="department" class="form-select form-select-sm border-0 bg-light rounded-pill" onchange="this.form.submit()" style="width: 140px;">
+                                    <!-- Hide 'None' if department exists -->
+                                    {% if not user.department %}
+                                        <option value="" selected>-- None --</option>
+                                    {% endif %}
+                                    
+                                    {% for dept in departments %}
+                                        <option value="{{ dept }}" {% if user.department == dept %}selected{% endif %}>{{ dept }}</option>
+                                    {% endfor %}
                                 </select>
-                                {% if user.id == current_user.id %}
-                                <span class="badge bg-success rounded-pill ms-2">You</span>
-                                {% endif %}
                             </form>
                         </td>
-                        <td class="text-muted small">
-                            <i class="bi bi-calendar3 me-1"></i>{{ user.created_at.strftime('%d/%m/%Y') }}
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border rounded-pill px-3 fw-bold">{{ user.pending_tasks }} Pending</span>
                         </td>
-                        <td class="pe-4 text-end">
-                            {% if user.id != current_user.id %}
-                            <form action="/admin/user/delete/{{ user.id }}" method="POST" onsubmit="return confirm('Xóa vĩnh viễn nhân viên này? Dữ liệu Task liên quan có thể bị ảnh hưởng.');" class="d-inline">
-                                <button type="submit" class="btn btn-link text-danger p-0 text-decoration-none small fw-bold">
-                                    <i class="bi bi-person-x-fill me-1"></i>Delete
+                        <td class="text-end pe-4">
+                            <!-- stopPropagation to prevent row click -->
+                            <div class="dropdown" onclick="event.stopPropagation()">
+                                <button class="btn btn-link text-muted p-0" data-bs-toggle="dropdown">
+                                    <i class="bi bi-three-dots-vertical"></i>
                                 </button>
-                            </form>
-                            {% else %}
-                            <span class="text-muted small italic">Root Admin</span>
-                            {% endif %}
+                                <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
+                                    <li>
+                                        <a class="dropdown-item rounded-2" href="/admin/user/detail/{{ user.id }}">
+                                            <i class="bi bi-eye me-2"></i>View Detail
+                                        </a>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <form action="/admin/user/delete/{{ user.id }}" method="POST" onsubmit="return confirm('Delete this user?');" class="m-0">
+                                            <button type="submit" class="dropdown-item text-danger rounded-2">
+                                                <i class="bi bi-trash me-2"></i>Delete User
+                                            </button>
+                                        </form>
+                                    </li>
+                                </ul>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -87,14 +114,54 @@
     </div>
 </div>
 
-<style>
-    /* Hiệu ứng khi di chuột vào tên nhân viên */
-    .staff-link { transition: color 0.2s; }
-    .staff-link:hover { color: #4361ee !important; text-decoration: underline !important; }
-    
-    .form-select-sm { font-size: 0.75rem; width: 110px; cursor: pointer; transition: 0.2s; }
-    .form-select-sm:hover { background-color: #e2e8f0; }
-    .table-hover tbody tr:hover { background-color: #f8faff !important; }
-    .badge { font-size: 0.7rem; }
-</style>
+<!-- ✅ Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Add New User</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/admin/user/add" method="POST">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">USERNAME</label>
+                        <input type="text" name="username" class="form-control rounded-3" required placeholder="Enter username">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">PASSWORD</label>
+                        <input type="password" name="password" class="form-control rounded-3" required placeholder="Enter password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
+                        <select name="department" class="form-select rounded-3">
+                            <option value="">-- Select Department --</option>
+                            {% for dept in departments %}
+                                <option value="{{ dept }}">{{ dept }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Script to auto-dismiss alerts -->
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        setTimeout(function() {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                // Use Bootstrap's alert instance to close
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 1500); // 1.5 seconds
+    });
+</script>
 {% endblock %}

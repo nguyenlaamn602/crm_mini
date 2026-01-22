@@ -369,6 +369,8 @@
             </div>
           </div>
 
+          <!-- ✅ FIX: Chỉ Admin mới thấy list để chọn lại người, User chỉ xem -->
+          {% if current_user.role == 'admin' %}
           <div class="mt-3">
             <label class="form-label fw-bold text-muted small">CHANGE ASSIGNEES</label>
             <div class="border rounded-3 p-2" style="max-height:180px; overflow-y:auto;">
@@ -384,6 +386,18 @@
               {% endfor %}
             </div>
           </div>
+          {% else %}
+          <div class="mt-3">
+             <label class="form-label fw-bold text-muted small">ASSIGNEES (Read-only)</label>
+             <div class="bg-light rounded-3 p-2 border">
+                {% for name in t.assignees %}
+                    <span class="badge bg-white text-dark border me-1">{{ name }}</span>
+                {% else %}
+                    <span class="text-muted small">No assignees</span>
+                {% endfor %}
+             </div>
+          </div>
+          {% endif %}
           
           <div class="mb-3 mt-3">
              <label class="form-label fw-bold text-muted small">ATTACHMENT</label>

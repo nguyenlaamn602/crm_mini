@@ -12,7 +12,7 @@
         </button>
     </header>
 
-    <div class="row g-4">
+    <div class="row g-4 mb-5">
         <div class="col-xl-4 col-md-6">
             <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #4361ee !important; cursor: pointer;" onclick="location.href='/sector/Pod_Drop'">
                 <div class="d-flex align-items-center mb-3">
@@ -49,6 +49,38 @@
                 </div>
                 <div class="display-5 fw-bold text-success mb-1">{{ stats.warehouse }}</div>
                 <div class="text-muted small">Total Customers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ✅ TEAM PERFORMANCE CHART -->
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="fw-bold mb-0">📊 Team Task Performance</h5>
+            
+            <!-- ✅ CHART FILTER BUTTONS -->
+            <div class="btn-group btn-group-sm shadow-sm" role="group">
+                <button type="button" class="btn btn-outline-secondary active fw-bold" onclick="filterChart('All', this)">All</button>
+                {% for dept in departments %}
+                <button type="button" class="btn btn-outline-secondary fw-bold" onclick="filterChart('{{ dept }}', this)">{{ dept }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        
+        <div class="card-body p-4">
+            <!-- Container của Chart: Fixed Height -->
+            <div style="position: relative; height: 400px; width: 100%;">
+                <canvas id="teamTaskChart"></canvas>
+                
+                <!-- Hiển thị khi không có data -->
+                <div id="noDataMessage" style="display:none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #aaa;">
+                    <i class="bi bi-bar-chart fs-1"></i>
+                    <p>Chưa có dữ liệu task cho phòng ban này</p>
+                </div>
+            </div>
+            
+            <div class="text-center text-muted small mt-2 fst-italic">
+                <i class="bi bi-info-circle me-1"></i> Click vào cột hoặc tên nhân viên để xem chi tiết
             </div>
         </div>
     </div>
@@ -92,17 +124,207 @@
     </div>
 </div>
 
+<!-- ✅ SAFE DATA INJECTION -->
 <script>
-    let lastSync = 0;
-    const toast = new bootstrap.Toast(document.getElementById('syncToast'));
-    setInterval(() => {
-        fetch('/sync-status').then(r => r.json()).then(data => {
-            if (lastSync !== 0 && data.last_sync !== lastSync) {
-                toast.show();
-                setTimeout(() => location.reload(), 3000);
-            }
-            lastSync = data.last_sync;
-        });
-    }, 30000);
+    // Nhận dữ liệu từ Flask
+    const SERVER_DATA = {{ user_task_stats | tojson | safe }} || [];
 </script>
+
+<!-- ✅ CHART.JS VERSION 3.9.1 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
+<script>
+    // Global Chart Instance
+    let myTeamChart = null;
+
+    document.addEventListener("DOMContentLoaded", function() {
+        // Initial Render: Show All
+        renderChart(SERVER_DATA);
+    });
+
+    // ✅ Hàm vẽ biểu đồ (Tái sử dụng cho Filter)
+    function renderChart(dataToRender) {
+        const ctxElement = document.getElementById('teamTaskChart');
+        const noDataEl = document.getElementById('noDataMessage');
+
+        // Check No Data
+        if (!dataToRender || dataToRender.length === 0) {
+            if (noDataEl) noDataEl.style.display = 'block';
+            if (myTeamChart) {
+                myTeamChart.destroy();
+                myTeamChart = null;
+            }
+            return;
+        } else {
+            if (noDataEl) noDataEl.style.display = 'none';
+        }
+
+        // Destroy old chart if exists
+        if (myTeamChart) {
+            myTeamChart.destroy();
+        }
+
+        if (ctxElement) {
+            const ctx = ctxElement.getContext('2d');
+            
+            myTeamChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dataToRender.map(u => u.username),
+                    datasets: [
+                        {
+                            label: 'Cus Task (Done)',
+                            data: dataToRender.map(u => u.cus_done),
+                            backgroundColor: '#198754', // Green
+                            stack: 'customer',
+                            barPercentage: 0.8,      // ✅ Dày hơn (cũ 0.6)
+                            categoryPercentage: 0.9  // ✅ Sát nhau hơn
+                        },
+                        {
+                            label: 'Cus Task (Pending)',
+                            data: dataToRender.map(u => u.cus_not),
+                            backgroundColor: '#dc3545', // Red
+                            stack: 'customer',
+                            barPercentage: 0.8,
+                            categoryPercentage: 0.9
+                        },
+                        {
+                            label: 'Corp Task (Done)',
+                            data: dataToRender.map(u => u.corp_done),
+                            backgroundColor: '#20c997', // Teal
+                            stack: 'corp',
+                            barPercentage: 0.8,
+                            categoryPercentage: 0.9,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Corp Task (Pending)',
+                            data: dataToRender.map(u => u.corp_not),
+                            backgroundColor: '#fd7e14', // Orange
+                            stack: 'corp',
+                            barPercentage: 0.8,
+                            categoryPercentage: 0.9,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: { 
+                            stacked: false, 
+                            grid: { display: false },
+                            ticks: {
+                                font: { weight: 'bold' }, // Tên đậm lên
+                                cursor: 'pointer'
+                            }
+                        },
+                        y: { 
+                            stacked: true, 
+                            beginAtZero: true,
+                            ticks: { stepSize: 1, precision: 0 } 
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) { return context[0].label; }
+                            }
+                        }
+                    },
+                    // ✅ Handle Hover để hiện con trỏ pointer
+                    onHover: (event, chartElement) => {
+                        event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
+                        // Logic xử lý hover lên label trục X để hiện pointer
+                        const points = myTeamChart.getElementsAtEventForMode(event, 'nearest', { intersect: false, axis: 'x' }, true);
+                        if (points.length) event.native.target.style.cursor = 'pointer';
+                    },
+                    // ✅ Xử lý Click (Cột & Tên)
+                    onClick: (e) => {
+                        const chart = myTeamChart;
+                        let dataIndex = null;
+
+                        // 1. Thử lấy phần tử tại điểm click (active elements - cột)
+                        const activeEls = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
+                        if (activeEls.length > 0) {
+                            dataIndex = activeEls[0].index;
+                        } 
+                        // 2. Nếu không trúng cột, thử lấy phần tử gần nhất theo trục X (để bắt click vào tên/label)
+                        else {
+                            const points = chart.getElementsAtEventForMode(e, 'nearest', { intersect: false, axis: 'x' }, true);
+                            if (points.length) {
+                                dataIndex = points[0].index;
+                            }
+                        }
+
+                        // Redirect nếu tìm thấy user
+                        if (dataIndex !== null) {
+                            const userId = dataToRender[dataIndex].id;
+                            if (userId && userId.length > 5) {
+                                window.location.href = `/admin/user/detail/${userId}`;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // ✅ Filter Function (Áp dụng trực tiếp cho Chart)
+    function filterChart(dept, btn) {
+        // UI Active State
+        const buttons = btn.parentElement.querySelectorAll('.btn');
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Logic Filter Data
+        let filteredData = [];
+        if (dept === 'All') {
+            filteredData = SERVER_DATA;
+        } else {
+            filteredData = SERVER_DATA.filter(u => u.department === dept);
+        }
+
+        // Vẽ lại chart
+        renderChart(filteredData);
+    }
+
+    // Sync logic Toast
+    let lastSync = 0;
+    const toastEl = document.getElementById('syncToast');
+    if(toastEl){
+        const toast = new bootstrap.Toast(toastEl);
+        setInterval(() => {
+            fetch('/sync-status').then(r => r.json()).then(data => {
+                if (lastSync !== 0 && data.last_sync !== lastSync) {
+                    toast.show();
+                    setTimeout(() => location.reload(), 3000);
+                }
+                lastSync = data.last_sync;
+            });
+        }, 30000);
+    }
+</script>
+
+<style>
+    .hover-shadow:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important;
+    }
+    .transition {
+        transition: all 0.2s ease-in-out;
+    }
+    /* Con trỏ chuột khi hover vào canvas để biết là click được */
+    #teamTaskChart {
+        cursor: pointer;
+    }
+</style>
 {% endblock %}

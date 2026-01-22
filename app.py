@@ -374,7 +374,56 @@ def index():
         "total_staff": db.users.count_documents({}),
         "personal_tasks": db.personal_tasks.count_documents({"user_id": ObjectId(current_user.id),"status": {"$ne": "Done"}})
     }
-    return render_template('pages.html', stats=stats)
+
+    # ✅ NEW: Calculate Tasks per User (For Graph)
+    # Tổng hợp từ bảng tasks (Customer Task) và corp_tasks (Company Task)
+    user_task_stats = []
+    # ✅ Lấy thêm trường department
+    all_users = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
+    
+    for u in all_users:
+        uid = u["_id"]
+        uid_str = str(uid)
+        
+        # ✅ FIX MẠNH: Truy vấn bằng cả ObjectId VÀ String
+        # Để đảm bảo bắt dính dù lưu kiểu gì
+        
+        # 1. Normal Tasks (Customer Tasks)
+        cus_done = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "Done"})
+        cus_not = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": {"$ne": "Done"}})
+        
+        # 2. Corp Tasks (Company Tasks) - assigned_to có thể là mảng
+        # Lưu ý: $in hoạt động tốt với mảng, nó sẽ check xem assigned_to (dù là đơn hay mảng) có chứa uid/uid_str không
+        corp_done = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "Done"})
+        # ✅ FIX: Đếm tất cả trạng thái KHÔNG PHẢI Done và KHÔNG PHẢI Cancelled
+        corp_not = db.corp_tasks.count_documents({
+            "assigned_to": {"$in": [uid, uid_str]}, 
+            "status": {"$nin": ["Done", "Cancelled"]}
+        })
+        
+        # ✅ IMPORTANT: TRẢ VỀ CÁC KEY RIÊNG BIỆT CHO CHART
+        # ✅ Force ép kiểu int để JSON serialize không bị lỗi
+        user_task_stats.append({
+            "id": str(uid),
+            "username": u.get("username", "Unknown"),
+            "department": u.get("department", "Other"),
+            "cus_done": int(cus_done),
+            "cus_not": int(cus_not),
+            "corp_done": int(corp_done),
+            "corp_not": int(corp_not),
+            "done": int(cus_done + corp_done),
+            "not_done": int(cus_not + corp_not)
+        })
+
+    # ✅ DEBUG LOG: In ra console server để kiểm tra dữ liệu
+    print(f"📊 [DEBUG CHART DATA] Count: {len(user_task_stats)}")
+    for x in user_task_stats:
+        # Chỉ in ra nếu có dữ liệu để tránh spam log
+        if x['cus_done'] > 0 or x['cus_not'] > 0 or x['corp_done'] > 0 or x['corp_not'] > 0:
+            print(f"User: {x['username']} | CusDone: {x['cus_done']} | CusNot: {x['cus_not']} | CorpDone: {x['corp_done']}")
+
+    # ✅ Truyền danh sách phòng ban cho filter
+    return render_template('pages.html', stats=stats, user_task_stats=user_task_stats, departments=USER_DEPARTMENTS)
 
 # ✅ User tự update Telegram ID
 @app.route('/user/update-telegram', methods=['POST'])
@@ -397,8 +446,64 @@ def view_sector(name):
     q = {"sector": name}
     if request.args.get('search'): q["full_name"] = {"$regex": request.args.get('search'), "$options": "i"}
     if request.args.get('status'): q["status"] = request.args.get('status')
+    
+    # ✅ MODE: VIEW MY LEADS (User Role Filter)
+    if request.args.get('mode') == 'mine':
+        q["assigned_to"] = ObjectId(current_user.id)
+        
     leads = list(db.leads.find(q).sort("updated_at", -1))
-    return render_template('leads.html', sector_name=name, sector_id=name, leads=leads)
+
+    # ✅ PREPARE DATA FOR ASSIGNMENT DROPDOWNS
+    users_list = []
+    if current_user.role == 'admin':
+        users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
+
+    # ✅ USER MAP FOR DISPLAY
+    user_map = {u['_id']: u['username'] for u in db.users.find({}, {"username": 1, "_id": 1})}
+    
+    return render_template('leads.html', sector_name=name, sector_id=name, leads=leads, user_map=user_map, users_list=users_list)
+
+# ✅ NEW: API Gán Lead (Cho Admin & User tự nhận/hủy)
+@app.route('/customer/assign/<psid>', methods=['POST'])
+@login_required
+def assign_lead(psid):
+    lead = db.leads.find_one({"psid": psid})
+    if not lead:
+        return jsonify({"status": "error", "message": "Lead not found"}), 404
+        
+    new_assignee_id = request.form.get('assigned_user_id')
+    
+    # LOGIC:
+    # 1. Admin can assign to anyone.
+    # 2. CSKH/Sale can claim (assign to self) if unassigned, or if allowed.
+    
+    action_ok = False
+    
+    if current_user.role == 'admin':
+        if new_assignee_id:
+            db.leads.update_one({"psid": psid}, {"$set": {"assigned_to": ObjectId(new_assignee_id), "updated_at": now_dt()}})
+        else:
+            # Unassign
+             db.leads.update_one({"psid": psid}, {"$unset": {"assigned_to": ""}, "$set": {"updated_at": now_dt()}})
+        action_ok = True
+        
+    elif current_user.department == 'CSKH/Sale' or current_user.role == 'user':
+        # Self claim
+        if new_assignee_id == str(current_user.id):
+            db.leads.update_one({"psid": psid}, {"$set": {"assigned_to": ObjectId(current_user.id), "updated_at": now_dt()}})
+            action_ok = True
+        # ✅ NEW: Self unclaim (Cancel Claim)
+        # Chỉ cho phép hủy nếu lead đang được gán cho chính user này
+        elif not new_assignee_id and str(lead.get('assigned_to')) == str(current_user.id):
+            db.leads.update_one({"psid": psid}, {"$unset": {"assigned_to": ""}, "$set": {"updated_at": now_dt()}})
+            action_ok = True
+            
+    if action_ok:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({"status": "success"})
+        return redirect(request.referrer or url_for('index'))
+    else:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
 
 @app.route('/customer/<psid>')
 @login_required
@@ -410,13 +515,34 @@ def view_customer_detail(psid):
     if current_user.role != 'admin':
         t_q = {"$and": [t_q, {"$or": [{"user_id": ObjectId(current_user.id)}, {"assigned_to": ObjectId(current_user.id)}]}]}
         n_q["user_id"] = ObjectId(current_user.id)
-    return render_template('customer.html', lead=lead, tasks=list(db.tasks.find(t_q).sort("created_at", -1)), notes=list(db.notes.find(n_q).sort("created_at", -1)), users_list=list(db.users.find({}, {"username": 1, "_id": 1})) if current_user.role == 'admin' else [])
+    
+    # ✅ PASS USERS LIST FOR ASSIGNMENT (Admin & All)
+    # We pass it to all because we might want to show names or allow claim
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
+        
+    return render_template('customer.html', lead=lead, tasks=list(db.tasks.find(t_q).sort("created_at", -1)), notes=list(db.notes.find(n_q).sort("created_at", -1)), users_list=users_list)
 
 @app.route('/customer/update/<psid>', methods=['POST'])
 @login_required
 def update_customer(psid):
     upd = {k: v for k, v in request.form.items() if v}
     upd['updated_at'] = now_dt()
+    
+    # Handle 'assigned_to' update from Customer Detail
+    if 'assigned_to' in upd:
+        val = upd['assigned_to']
+        if val:
+            upd['assigned_to'] = ObjectId(val)
+        else:
+            # If empty string passed, unset it (need special handling for update_one logic or just ignore if standard form)
+            # The standard logic below will set assigned_to="" if using form loop, which is bad for ObjectId.
+            # Specialized handling:
+            pass 
+            
+    # Fix ObjectId for assigned_to if it came from the loop above as string
+    if 'assigned_to' in upd and isinstance(upd['assigned_to'], str):
+         upd['assigned_to'] = ObjectId(upd['assigned_to'])
+         
     db.leads.update_one({"psid": psid}, {"$set": upd})
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest': return jsonify({"status": "success"})
     return redirect(url_for('view_customer_detail', psid=psid))
@@ -954,12 +1080,16 @@ def update_corp_task(id):
     department = request.form.get('department')
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
-    # Admin được quyền đổi người phụ trách, User thì giữ nguyên
+    # ✅ FIXED: Correct variable naming (assigned_user_ids instead of uids)
     if current_user.role == 'admin':
         assigned_user_ids = request.form.getlist('assigned_user_ids')
-        users = list(db.users.find({"_id": {"$in": [ObjectId(u) for u in uids]}}))
-        assigned_to_oids = [u["_id"] for u in users]
-        assignees = [u.get("username", "user") for u in users]
+        try:
+            users = list(db.users.find({"_id": {"$in": [ObjectId(u) for u in assigned_user_ids]}}))
+            assigned_to_oids = [u["_id"] for u in users]
+            assignees = [u.get("username", "user") for u in users]
+        except:
+            assigned_to_oids = []
+            assignees = []
     else:
         assigned_to_oids = t.get("assigned_to")
         assignees = t.get("assignees")
@@ -1023,6 +1153,61 @@ def request_corp_delete(id):
     return redirect(url_for('view_corp_tasks'))
 
 # ---------------------------
+# ✅ ROUTES: REQUESTS CUSTOMER (NEW FEATURE)
+# ---------------------------
+@app.route('/requests/customer')
+@login_required
+def view_customer_requests():
+    """Giao diện danh sách yêu cầu n8n"""
+    q = {}
+    if request.args.get('search'):
+        q["$or"] = [
+            {"content": {"$regex": request.args.get('search'), "$options": "i"}},
+            {"customer_name": {"$regex": request.args.get('search'), "$options": "i"}}
+        ]
+    requests_list = list(db.customer_requests.find(q).sort("created_at", -1))
+    return render_template('requests_customer.html', requests=requests_list)
+
+@app.route('/request/customer/delete/<id>', methods=['POST'])
+@login_required
+def delete_customer_request(id):
+    """Xóa yêu cầu (Chỉ Admin)"""
+    if current_user.role == 'admin':
+        db.customer_requests.delete_one({"id": id})
+    return redirect(url_for('view_customer_requests'))
+
+# ---------------------------
+# ✅ API: EXTERNAL (n8n Integration)
+# ---------------------------
+@app.route('/api/external/task', methods=['POST'])
+def add_external_task():
+    """API cho n8n bắn dữ liệu về - Lưu vào Customer Requests"""
+    auth_header = request.headers.get('Authorization')
+    if auth_header != f"Bearer {app.config['SECRET_KEY']}":
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    
+    data = request.json
+    if not data: return jsonify({"status": "error", "message": "No data"}), 400
+    
+    content = data.get('content', '')
+    raw_customer_name = data.get('customer_name', '')
+    source_app = data.get('app', 'Tele')
+    
+    customer_psid, norm_name = link_customer_for_task(raw_customer_name)
+    rid = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    
+    db.customer_requests.insert_one({
+        "id": rid,
+        "content": content,
+        "customer_name": norm_name or raw_customer_name,
+        "customer_psid": customer_psid,
+        "app": source_app,
+        "created_at": now_dt(),
+        "assigned_by": f"n8n ({source_app})"
+    })
+    return jsonify({"status": "success", "id": rid})
+
+# ---------------------------
 # ROUTES: ADMIN USER MANAGEMENT
 # ---------------------------
 @app.route('/admin/users')
@@ -1065,7 +1250,7 @@ def admin_add_user():
         "username": u,
         "password_hash": generate_password_hash(p),
         "role": "user",
-        "department": d,
+        "department": dept, # ✅ Fix: d -> dept
         "created_at": now_dt()
     })
     flash(f'Tạo user {u} thành công', 'success')
@@ -1179,7 +1364,7 @@ def update_user_department(user_id):
         flash(f"User {target_user.get('username')} đã có phòng ban, không thể hủy bỏ!", "warning")
     elif new_dept:
         db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"department": new_dept}})
-        flash(f"Đã cập nhật phòng ban cho {u.get('username')}", "success")
+        flash(f"Đã cập nhật phòng ban cho {target_user.get('username')}", "success") # ✅ Fix: u -> target_user
 
     return redirect(url_for('admin_users'))
 

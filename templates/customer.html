@@ -74,6 +74,54 @@
                     </select>
                 </div>
 
+                <!-- ✅ NEW: ASSIGNED STAFF FIELD -->
+                <div class="mb-4">
+                    <label class="text-muted small d-block mb-1">ASSIGNED STAFF</label>
+                    {% if current_user.role == 'admin' %}
+                        <!-- Admin can change assignee -->
+                        <select class="form-select border-0 bg-info bg-opacity-10 text-dark rounded-3 fw-bold" data-field="assigned_to" onchange="autoSave(this)">
+                            <option value="">-- Unassigned --</option>
+                            {% for u in users_list %}
+                                <option value="{{ u._id }}" {% if lead.assigned_to|string == u._id|string %}selected{% endif %}>
+                                    {{ u.username }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    {% else %}
+                        <!-- CSKH/Sale View -->
+                        {% if lead.assigned_to %}
+                            <!-- Display Name lookup tricky without map, but we can iterate user list passed from backend -->
+                            {% set assigned_name = "Unknown" %}
+                            {% for u in users_list %}
+                                {% if lead.assigned_to|string == u._id|string %}
+                                    {% set assigned_name = u.username %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="fw-bold text-dark px-2 py-2 bg-light rounded-3 flex-grow-1">
+                                    <i class="bi bi-person-check-fill text-success me-2"></i> {{ assigned_name }}
+                                </div>
+                                
+                                {% if lead.assigned_to|string == current_user.id|string %}
+                                    <button onclick="unclaimLead()" class="btn btn-danger bg-opacity-10 text-danger border-danger border-opacity-25 rounded-3 py-2 px-3 fw-bold" style="font-size: 0.85rem;">
+                                        <i class="bi bi-x-circle-fill me-1"></i> Hủy
+                                    </button>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <!-- Unassigned: Show Claim Button -->
+                             {% if current_user.department == 'CSKH/Sale' %}
+                                <button onclick="claimLead()" class="btn btn-outline-primary w-100 rounded-3 border-2 fw-bold">
+                                    <i class="bi bi-hand-index-thumb me-1"></i> Receive Lead (Nhận)
+                                </button>
+                             {% else %}
+                                <div class="text-muted fst-italic px-2">Not assigned</div>
+                             {% endif %}
+                        {% endif %}
+                    {% endif %}
+                </div>
+
                 {# =========================
                    ✅ SOURCE: Pancake link
                    Format: https://pancake.vn/{page_username}?c_id={conversation_id}
@@ -307,6 +355,53 @@
             }
         } catch (e) {
             indicator.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error!';
+        }
+    }
+    
+    // ✅ Function to claim lead from detail page (button)
+    async function claimLead() {
+        if (!confirm("Bạn có chắc muốn nhận khách này không?")) return;
+        const formData = new FormData();
+        formData.append('assigned_user_id', '{{ current_user.id }}');
+        
+        try {
+            const response = await fetch('/customer/assign/{{ lead.psid }}', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                location.reload();
+            } else {
+                alert('Không thể nhận khách: ' + (result.message || 'Unknown error'));
+            }
+        } catch(e) {
+            alert('Lỗi kết nối');
+        }
+    }
+
+    // ✅ NEW: Function to unclaim/cancel lead
+    async function unclaimLead() {
+        if (!confirm("Bạn muốn hủy phụ trách khách này?")) return;
+        const formData = new FormData();
+        // Send empty assigned_user_id to trigger unassign logic in backend
+        formData.append('assigned_user_id', ''); 
+        
+        try {
+            const response = await fetch('/customer/assign/{{ lead.psid }}', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                location.reload();
+            } else {
+                alert('Lỗi: ' + (result.message || 'Không thể hủy'));
+            }
+        } catch(e) {
+            alert('Lỗi kết nối');
         }
     }
 </script>

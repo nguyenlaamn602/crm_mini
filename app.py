@@ -5,12 +5,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from models import User
 from services.pancake import PancakeService
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 import requests, time, random, string, re
 import uuid
 import os
+import sys
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -38,6 +39,9 @@ app.config['SECRET_KEY'] = 'crm_thg_ultimate_2025_secure_final_v5'
 UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# ✅ CONFIG LOG FILE
+DEBUG_LOG_FILE = 'debug_n8n.log'
 
 login_manager = LoginManager()
 login_manager.user_loader(lambda uid: User(db.users.find_one({"_id": ObjectId(uid)})) if db.users.find_one({"_id": ObjectId(uid)}) else None)
@@ -73,7 +77,19 @@ CORP_STATUS_LABELS = {
 # HELPERS
 # ---------------------------
 def now_dt():
-    return datetime.now()
+    # ✅ FIX TIME: Ép buộc giờ Việt Nam (UTC+7)
+    utc_now = datetime.now(timezone.utc)
+    vn_time = utc_now + timedelta(hours=7)
+    return vn_time.replace(tzinfo=None) 
+
+def log_to_file(msg):
+    """✅ Ghi log ra file để xem trên web"""
+    try:
+        timestamp = now_dt().strftime("%Y-%m-%d %H:%M:%S")
+        with open(DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {msg}\n")
+    except Exception as e:
+        print(f"Log Error: {e}", file=sys.stderr)
 
 def parse_due_at(raw: str):
     if not raw: return None
@@ -91,7 +107,7 @@ def save_uploaded_file(file_obj):
             file_obj.save(file_path)
             return unique_filename
         except Exception as e:
-            print(f"Error saving file: {e}")
+            log_to_file(f"Error saving file: {e}")
             return None
     return None
 
@@ -104,27 +120,22 @@ def send_telegram_notification(chat_id, text):
         requests.post(TELEGRAM_API_URL, json=payload, timeout=5)
         return True
     except Exception as e:
-        print(f"[TELEGRAM] Error: {e}")
+        log_to_file(f"[TELEGRAM] Error: {e}")
         return False
 
 # ✅ NEW: NOTIFY CREATOR ON STATUS CHANGE
 def send_status_change_notification(task_doc, new_status, task_type="Task"):
-    """Gửi thông báo cho người tạo khi status thay đổi (nếu người sửa khác người tạo)"""
     try:
         creator = None
-        # Xác định người tạo dựa trên loại task
         if task_type == "Corp Task":
-            # Corp task lưu username người tạo trong assigned_by (string) hoặc tìm theo logic cũ
             creator_name = task_doc.get("assigned_by")
             if creator_name:
                 creator = db.users.find_one({"username": creator_name})
         else:
-            # Normal task lưu user_id (ObjectId) là người tạo
             user_id = task_doc.get("user_id")
             if user_id:
                 creator = db.users.find_one({"_id": user_id})
 
-        # Chỉ gửi nếu tìm thấy creator, có chat_id và người sửa KHÁC người tạo
         if creator and creator.get("telegram_chat_id"):
             creator_id_str = str(creator['_id'])
             current_user_id_str = str(current_user.id)
@@ -140,7 +151,7 @@ def send_status_change_notification(task_doc, new_status, task_type="Task"):
                 )
                 send_telegram_notification(creator.get("telegram_chat_id"), msg)
     except Exception as e:
-        print(f"[TELEGRAM] Status notify error: {e}")
+        log_to_file(f"[TELEGRAM] Status notify error: {e}")
 
 def find_any_task(tid):
     t = db.tasks.find_one({"id": tid})
@@ -167,15 +178,19 @@ def mark_missed(task_id: str, reason: str = "auto"):
         }
     })
 
-def link_customer_for_task(customer_name: str):
-    if not customer_name: return None, None
-    name = customer_name.strip()
-    if not name: return None, None
-    lead = db.leads.find_one({"full_name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
+# ✅ UPDATED: Logic tìm khách hàng thông minh hơn
+def link_customer_for_task(raw_name: str):
+    if not raw_name: return None, None
+    clean_name = re.sub(r'\s*\[.*\]', '', raw_name).strip()
+    if not clean_name: return None, raw_name
+
+    lead = db.leads.find_one({"full_name": {"$regex": f"^{re.escape(clean_name)}$", "$options": "i"}})
     if lead: return lead.get("psid"), lead.get("full_name")
-    lead = db.leads.find_one({"full_name": {"$regex": re.escape(name), "$options": "i"}}, sort=[("updated_at", -1)])
+    
+    lead = db.leads.find_one({"full_name": {"$regex": re.escape(clean_name), "$options": "i"}}, sort=[("updated_at", -1)])
     if lead: return lead.get("psid"), lead.get("full_name")
-    return None, None
+    
+    return None, clean_name
 
 def can_user_quick_update(task_doc):
     if current_user.role == "admin": return True
@@ -185,7 +200,7 @@ def can_user_quick_update(task_doc):
 def allowed_next_status(task_doc):
     if is_overdue(task_doc) and task_doc.get("status") != "Done": return "Missed"
     if task_doc.get("status") == "Not_yet": return "Done"
-    return "Not_yet" # Toggle back
+    return "Not_yet"
 
 def next_personal_status(cur):
     if cur == "Not_yet": return "Done"
@@ -217,7 +232,7 @@ def validate_corp_status_change(new_status: str, corp_task):
     return True, ""
 
 # ---------------------------
-# SYNC LOGIC (Pancake & Lark)
+# SYNC LOGIC
 # ---------------------------
 def get_lark_token():
     try:
@@ -375,34 +390,22 @@ def index():
         "personal_tasks": db.personal_tasks.count_documents({"user_id": ObjectId(current_user.id),"status": {"$ne": "Done"}})
     }
 
-    # ✅ NEW: Calculate Tasks per User (For Graph)
-    # Tổng hợp từ bảng tasks (Customer Task) và corp_tasks (Company Task)
     user_task_stats = []
-    # ✅ Lấy thêm trường department
     all_users = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
     
     for u in all_users:
         uid = u["_id"]
         uid_str = str(uid)
         
-        # ✅ FIX MẠNH: Truy vấn bằng cả ObjectId VÀ String
-        # Để đảm bảo bắt dính dù lưu kiểu gì
-        
-        # 1. Normal Tasks (Customer Tasks)
         cus_done = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "Done"})
         cus_not = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": {"$ne": "Done"}})
         
-        # 2. Corp Tasks (Company Tasks) - assigned_to có thể là mảng
-        # Lưu ý: $in hoạt động tốt với mảng, nó sẽ check xem assigned_to (dù là đơn hay mảng) có chứa uid/uid_str không
         corp_done = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "Done"})
-        # ✅ FIX: Đếm tất cả trạng thái KHÔNG PHẢI Done và KHÔNG PHẢI Cancelled
         corp_not = db.corp_tasks.count_documents({
             "assigned_to": {"$in": [uid, uid_str]}, 
             "status": {"$nin": ["Done", "Cancelled"]}
         })
         
-        # ✅ IMPORTANT: TRẢ VỀ CÁC KEY RIÊNG BIỆT CHO CHART
-        # ✅ Force ép kiểu int để JSON serialize không bị lỗi
         user_task_stats.append({
             "id": str(uid),
             "username": u.get("username", "Unknown"),
@@ -415,17 +418,8 @@ def index():
             "not_done": int(cus_not + corp_not)
         })
 
-    # ✅ DEBUG LOG: In ra console server để kiểm tra dữ liệu
-    print(f"📊 [DEBUG CHART DATA] Count: {len(user_task_stats)}")
-    for x in user_task_stats:
-        # Chỉ in ra nếu có dữ liệu để tránh spam log
-        if x['cus_done'] > 0 or x['cus_not'] > 0 or x['corp_done'] > 0 or x['corp_not'] > 0:
-            print(f"User: {x['username']} | CusDone: {x['cus_done']} | CusNot: {x['cus_not']} | CorpDone: {x['corp_done']}")
-
-    # ✅ Truyền danh sách phòng ban cho filter
     return render_template('pages.html', stats=stats, user_task_stats=user_task_stats, departments=USER_DEPARTMENTS)
 
-# ✅ User tự update Telegram ID
 @app.route('/user/update-telegram', methods=['POST'])
 @login_required
 def update_telegram_self():
@@ -447,23 +441,18 @@ def view_sector(name):
     if request.args.get('search'): q["full_name"] = {"$regex": request.args.get('search'), "$options": "i"}
     if request.args.get('status'): q["status"] = request.args.get('status')
     
-    # ✅ MODE: VIEW MY LEADS (User Role Filter)
     if request.args.get('mode') == 'mine':
         q["assigned_to"] = ObjectId(current_user.id)
         
     leads = list(db.leads.find(q).sort("updated_at", -1))
-
-    # ✅ PREPARE DATA FOR ASSIGNMENT DROPDOWNS
     users_list = []
     if current_user.role == 'admin':
         users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
 
-    # ✅ USER MAP FOR DISPLAY
     user_map = {u['_id']: u['username'] for u in db.users.find({}, {"username": 1, "_id": 1})}
     
     return render_template('leads.html', sector_name=name, sector_id=name, leads=leads, user_map=user_map, users_list=users_list)
 
-# ✅ NEW: API Gán Lead (Cho Admin & User tự nhận/hủy)
 @app.route('/customer/assign/<psid>', methods=['POST'])
 @login_required
 def assign_lead(psid):
@@ -472,28 +461,19 @@ def assign_lead(psid):
         return jsonify({"status": "error", "message": "Lead not found"}), 404
         
     new_assignee_id = request.form.get('assigned_user_id')
-    
-    # LOGIC:
-    # 1. Admin can assign to anyone.
-    # 2. CSKH/Sale can claim (assign to self) if unassigned, or if allowed.
-    
     action_ok = False
     
     if current_user.role == 'admin':
         if new_assignee_id:
             db.leads.update_one({"psid": psid}, {"$set": {"assigned_to": ObjectId(new_assignee_id), "updated_at": now_dt()}})
         else:
-            # Unassign
              db.leads.update_one({"psid": psid}, {"$unset": {"assigned_to": ""}, "$set": {"updated_at": now_dt()}})
         action_ok = True
         
     elif current_user.department == 'CSKH/Sale' or current_user.role == 'user':
-        # Self claim
         if new_assignee_id == str(current_user.id):
             db.leads.update_one({"psid": psid}, {"$set": {"assigned_to": ObjectId(current_user.id), "updated_at": now_dt()}})
             action_ok = True
-        # ✅ NEW: Self unclaim (Cancel Claim)
-        # Chỉ cho phép hủy nếu lead đang được gán cho chính user này
         elif not new_assignee_id and str(lead.get('assigned_to')) == str(current_user.id):
             db.leads.update_one({"psid": psid}, {"$unset": {"assigned_to": ""}, "$set": {"updated_at": now_dt()}})
             action_ok = True
@@ -516,10 +496,7 @@ def view_customer_detail(psid):
         t_q = {"$and": [t_q, {"$or": [{"user_id": ObjectId(current_user.id)}, {"assigned_to": ObjectId(current_user.id)}]}]}
         n_q["user_id"] = ObjectId(current_user.id)
     
-    # ✅ PASS USERS LIST FOR ASSIGNMENT (Admin & All)
-    # We pass it to all because we might want to show names or allow claim
     users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
-        
     return render_template('customer.html', lead=lead, tasks=list(db.tasks.find(t_q).sort("created_at", -1)), notes=list(db.notes.find(n_q).sort("created_at", -1)), users_list=users_list)
 
 @app.route('/customer/update/<psid>', methods=['POST'])
@@ -527,22 +504,11 @@ def view_customer_detail(psid):
 def update_customer(psid):
     upd = {k: v for k, v in request.form.items() if v}
     upd['updated_at'] = now_dt()
-    
-    # Handle 'assigned_to' update from Customer Detail
-    if 'assigned_to' in upd:
-        val = upd['assigned_to']
-        if val:
-            upd['assigned_to'] = ObjectId(val)
-        else:
-            # If empty string passed, unset it (need special handling for update_one logic or just ignore if standard form)
-            # The standard logic below will set assigned_to="" if using form loop, which is bad for ObjectId.
-            # Specialized handling:
-            pass 
-            
-    # Fix ObjectId for assigned_to if it came from the loop above as string
     if 'assigned_to' in upd and isinstance(upd['assigned_to'], str):
-         upd['assigned_to'] = ObjectId(upd['assigned_to'])
-         
+         if upd['assigned_to']:
+             upd['assigned_to'] = ObjectId(upd['assigned_to'])
+         else:
+             pass 
     db.leads.update_one({"psid": psid}, {"$set": upd})
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest': return jsonify({"status": "success"})
     return redirect(url_for('view_customer_detail', psid=psid))
@@ -1177,6 +1143,49 @@ def delete_customer_request(id):
     return redirect(url_for('view_customer_requests'))
 
 # ---------------------------
+# ✅ ROUTES: TOOLS (NEW PRICING)
+# ---------------------------
+@app.route('/tools/pricing')
+@login_required
+def view_pricing_tool():
+    """Giao diện Pricing Tool"""
+    return render_template('pricing.html')
+
+@app.route('/tools/pricing/calculate', methods=['POST'])
+@login_required
+def pricing_calculate():
+    """API tính toán giá cước (Mock Logic)"""
+    try:
+        data = request.json or request.form
+        weight = float(data.get('weight', 0))
+        service = data.get('service', 'Express')
+        country = data.get('country', 'VN')
+        
+        # Simple Mock Formula (Thay thế bằng logic thực tế sau này)
+        base_price = 30000 if service == 'Express' else 15000
+        rate_per_kg = 20000
+        
+        # Surcharges mock
+        fuel_surcharge = 0.15 # 15%
+        
+        subtotal = base_price + (weight * rate_per_kg)
+        total = subtotal * (1 + fuel_surcharge)
+        
+        return jsonify({
+            "status": "success",
+            "data": {
+                "weight": weight,
+                "service": service,
+                "country": country,
+                "subtotal": round(subtotal, 0),
+                "total_price": round(total, 0),
+                "currency": "VND"
+            }
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+# ---------------------------
 # ✅ API: EXTERNAL (n8n Integration)
 # ---------------------------
 @app.route('/api/external/task', methods=['POST'])
@@ -1186,13 +1195,48 @@ def add_external_task():
     if auth_header != f"Bearer {app.config['SECRET_KEY']}":
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
     
-    data = request.json
-    if not data: return jsonify({"status": "error", "message": "No data"}), 400
-    
+    # ✅ SAFETY 1: Force Parse JSON
+    data = request.get_json(force=True, silent=True) or {}
+    if not data: 
+        return jsonify({"status": "error", "message": "No data"}), 400
+
     content = data.get('content', '')
     raw_customer_name = data.get('customer_name', '')
-    source_app = data.get('app', 'Tele')
+    sender_name = str(data.get('sender_name') or 'Unknown').strip()
     
+    # ✅ LOGIC MAPPING 2 CHIỀU: INT & STR
+    sender_id_raw = data.get('sender_id')
+    
+    source_app = data.get('app', 'Tele')
+    internal_user = None
+
+    if source_app == 'Tele' and sender_id_raw:
+        # Case 1: Thử tìm theo String (Chuẩn mới)
+        try:
+            sid_str = str(sender_id_raw).strip()
+            if sid_str and sid_str.lower() != 'none':
+                internal_user = db.users.find_one({"telegram_chat_id": sid_str})
+        except Exception:
+            pass
+
+        # Case 2: Nếu chưa thấy, thử tìm theo Integer (Chuẩn cũ/Lỗi n8n)
+        if not internal_user:
+            try:
+                sid_int = int(sender_id_raw)
+                internal_user = db.users.find_one({"telegram_chat_id": sid_int})
+            except Exception:
+                pass
+    
+    # Nếu tìm thấy User nội bộ -> Lấy Username chuẩn
+    if internal_user:
+        u_name = internal_user.get('username')
+        if u_name and str(u_name).strip():
+            sender_name = str(u_name).strip()
+
+    # Final check: Đảm bảo không bao giờ lưu rỗng
+    if not sender_name or sender_name == 'None':
+        sender_name = 'Unknown'
+
     customer_psid, norm_name = link_customer_for_task(raw_customer_name)
     rid = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     
@@ -1203,9 +1247,14 @@ def add_external_task():
         "customer_psid": customer_psid,
         "app": source_app,
         "created_at": now_dt(),
-        "assigned_by": f"n8n ({source_app})"
+        "assigned_by": f"{sender_name} ({source_app})",
+        "sender_name": sender_name
     })
-    return jsonify({"status": "success", "id": rid})
+    
+    return jsonify({
+        "status": "success", 
+        "id": rid
+    })
 
 # ---------------------------
 # ROUTES: ADMIN USER MANAGEMENT

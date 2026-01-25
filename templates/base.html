@@ -237,6 +237,26 @@
             <i class="bi bi-building"></i><span class="nav-text">Corporate Tasks</span>
         </a>
 
+        <!-- REQUESTS (NEW SECTION) -->
+        <div class="parent-item" id="requests-toggle">
+            <span class="nav-text">REQUESTS</span>
+            <i class="bi bi-chevron-right parent-arrow" id="requests-arrow"></i>
+        </div>
+
+        <a href="/requests/customer" class="nav-link {% if request.path.startswith('/requests/customer') %}active{% endif %}" data-requests-item>
+            <i class="bi bi-chat-left-dots-fill"></i><span class="nav-text">Request Customer</span>
+        </a>
+
+        <!-- TOOLS (NEW)
+        <div class="parent-item" id="tools-toggle">
+            <span class="nav-text">TOOLS</span>
+            <i class="bi bi-chevron-right parent-arrow" id="tools-arrow"></i>
+        </div>
+
+        <a href="/tools/pricing" class="nav-link {% if request.path.startswith('/tools/pricing') %}active{% endif %}" data-tools-item>
+            <i class="bi bi-calculator"></i><span class="nav-text">Pricing Tool</span>
+        </a> -->
+
         <!-- OPERATIONS -->
         {% if current_user.role == 'admin' %}
         <div class="parent-item" id="ops-toggle">
@@ -306,12 +326,16 @@ toggleBtn.onclick = () => {
     localStorage.setItem('sidebar-collapsed', collapsed);
 };
 
-/* PARENT TOGGLE LOGIC */
+/* PARENT TOGGLE LOGIC - FIXED ROBUSTNESS */
 document.addEventListener('DOMContentLoaded', () => {
     function setup(toggleId, itemSelector, arrowId, key, autoOpen) {
         const toggle = document.getElementById(toggleId);
         const items = document.querySelectorAll(itemSelector);
         const arrow = document.getElementById(arrowId);
+
+        // ✅ IMPORTANT FIX: Kiểm tra xem toggle và arrow có tồn tại không trước khi gán sự kiện
+        // Vì nếu user không phải admin, các ID này sẽ không có trong HTML
+        if (!toggle || !arrow) return;
 
         let open = localStorage.getItem(key);
         open = open === null ? autoOpen : open === 'true';
@@ -331,6 +355,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setup('tasks-toggle','[data-tasks-item]','tasks-arrow','tasks-open',
         "{{ request.path }}".includes("tasks"));
+
+    setup('requests-toggle','[data-requests-item]','requests-arrow','requests-open',
+        "{{ request.path }}".startsWith("/requests"));
+
+    setup('tools-toggle','[data-tools-item]','tools-arrow','tools-open',
+        "{{ request.path }}".startsWith("/tools"));
 
     setup('ops-toggle','[data-ops-item]','ops-arrow','ops-open',
         "{{ request.path }}".startsWith("/broadcast"));

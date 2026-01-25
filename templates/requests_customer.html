@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+
+{% block title %}Customer Requests - HUB THG{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-0">Customer Requests</h4>
+            <p class="text-muted small">Automated messages from Telegram/Zalo</p>
+        </div>
+        
+        <form class="d-flex" method="GET">
+            <div class="input-group">
+                <input type="text" name="search" class="form-control" placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
+                <button class="btn btn-primary" type="submit">Search</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light text-uppercase" style="font-size: 0.8rem;">
+                        <tr>
+                            <th class="ps-4">Source</th>
+                            <th>Sender</th> <!-- ✅ Đã thêm cột Sender -->
+                            <th>Customer</th>
+                            <th>Content</th>
+                            <th>Time</th>
+                            <th class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for req in requests %}
+                        <tr>
+                            <td class="ps-4">
+                                <span class="badge rounded-pill px-3 {% if req.app == 'Tele' %}bg-info-subtle text-info{% else %}bg-primary-subtle text-primary{% endif %}">
+                                    {{ req.app }}
+                                </span>
+                            </td>
+                            
+                            <!-- ✅ Hiển thị Sender -->
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-secondary bg-opacity-10 text-secondary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold; font-size: 0.8rem;">
+                                        {{ req.sender_name[0].upper() if req.sender_name else '?' }}
+                                    </div>
+                                    <div class="fw-bold text-dark small">{{ req.sender_name or 'System' }}</div>
+                                </div>
+                            </td>
+
+                            <td>
+                                <div class="fw-bold text-primary">{{ req.customer_name }}</div>
+                                {% if req.customer_psid %}
+                                    <a href="{{ url_for('view_customer_detail', psid=req.customer_psid) }}" class="small text-decoration-none text-muted">
+                                        <i class="bi bi-box-arrow-up-right me-1"></i>View Lead
+                                    </a>
+                                {% else %}
+                                    <span class="small text-muted fst-italic">Unmapped</span>
+                                {% endif %}
+                            </td>
+                            
+                            <td>
+                                <div class="text-wrap text-secondary" style="max-width: 350px; font-size: 0.9rem;">
+                                    {{ req.content }}
+                                </div>
+                            </td>
+                            
+                            <td>
+                                <!-- ✅ Hiển thị thời gian -->
+                                <div class="small text-muted fw-medium">
+                                    {{ req.created_at.strftime('%H:%M %d/%m') if req.created_at else '---' }}
+                                </div>
+                            </td>
+                            
+                            <td class="text-end pe-4">
+                                {% if current_user.role == 'admin' %}
+                                <form action="{{ url_for('delete_customer_request', id=req.id) }}" method="POST" onsubmit="return confirm('Delete this request?');">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm rounded-circle shadow-sm" style="width: 32px; height: 32px; padding: 0;">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-1 d-block mb-2 opacity-25"></i>
+                                No requests found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

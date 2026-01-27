@@ -1,426 +1,699 @@
 {% extends "base.html" %}
-{% block title %}Task Management - THG{% endblock %}
+{% block title %}Unified Task Management - THG{% endblock %}
 
 {% block content %}
-<div class="container-fluid p-0">
-    <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-4 rounded-4 shadow-sm">
-        <div>
-            <h4 class="mb-1 fw-bold text-dark">📋 Task Management Dashboard</h4>
-            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-2" data-bs-toggle="modal" data-bs-target="#addTaskModal">
-                <i class="bi bi-plus-lg me-1"></i> Add New Task
-            </button>
-        </div>
 
-        <form action="/tasks" method="GET" class="d-flex gap-3">
+{# --- STATUS CONFIG --- #}
+{% set status_colors = {
+  "todo": "bg-secondary-subtle text-secondary border-secondary",
+  "doing": "bg-warning-subtle text-warning border-warning",
+  "done": "bg-success-subtle text-success border-success",
+  "overdue": "bg-danger-subtle text-danger border-danger",
+  "cancelled": "bg-dark-subtle text-dark border-dark"
+} %}
+
+{# --- TYPE CONFIG --- #}
+{% set type_badges = {
+  "customer": "bg-info-subtle text-info border-info",
+  "corp": "bg-primary-subtle text-primary border-primary",
+  "personal": "bg-light text-dark border-secondary",
+  "request": "bg-warning-subtle text-warning border-warning",
+  "department": "bg-success-subtle text-success border-success"
+} %}
+
+<div class="container-fluid p-0">
+  
+  <!-- HEADER & CONTROLS SECTION -->
+  <div class="bg-white p-4 rounded-4 shadow-sm mb-4">
+      
+      <!-- TOP ROW: TITLE & CREATE BUTTONS -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+          <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-kanban me-2"></i>Unified Task Management</h4>
+          <div class="d-flex gap-2">
+              <button class="btn btn-outline-info btn-sm rounded-pill px-3 shadow-sm fw-medium"
+                      data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                <i class="bi bi-person-vcard me-1"></i> + Customer
+              </button>
+              
+              <!-- ✅ FIX: Allow EVERYONE to add Corp Task -->
+              <button class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm fw-medium"
+                      data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
+                <i class="bi bi-building me-1"></i> + Corp
+              </button>
+
+              <button class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm fw-medium"
+                      data-bs-toggle="modal" data-bs-target="#addPersonalTaskModal">
+                <i class="bi bi-person me-1"></i> + Personal
+              </button>
+              <button class="btn btn-outline-warning btn-sm rounded-pill px-3 shadow-sm fw-medium text-dark"
+                      data-bs-toggle="modal" data-bs-target="#addRequestModal">
+                <i class="bi bi-chat-left-dots me-1"></i> + Request
+          </button>
+          
+          <!-- ✅ FIX: Allow EVERYONE to add Dept Task -->
+          <button class="btn btn-outline-success btn-sm rounded-pill px-3 shadow-sm"
+                  data-bs-toggle="modal" data-bs-target="#addDepartmentTaskModal">
+            <i class="bi bi-building-fill-gear me-1"></i> + Department
+          </button>
+          </div>
+      </div>
+
+      <!-- FILTER FORM WITH BIG CARDS -->
+      <form action="/tasks" method="GET">
+        
+        <!-- Search & Status Row -->
+        <div class="d-flex justify-content-between gap-3 mb-3">
+             <select name="status" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" onchange="this.form.submit()" style="width: 150px;">
+                <option value="">All Statuses</option>
+                {% for s in statuses %}
+                <option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s|upper }}</option>
+                {% endfor %}
+            </select>
+            <select name="department" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" onchange="this.form.submit()" style="width: 180px;">
+                <option value="">All Departments</option>
+                {% for d in department_task_departments %}
+                <option value="{{ d }}" {% if request.args.get('department') == d %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+            </select>
+            
             <div class="input-group input-group-sm bg-light rounded-pill px-3 py-1 border-0" style="width: 300px;">
                 <span class="input-group-text border-0 bg-transparent text-muted"><i class="bi bi-search"></i></span>
                 <input type="text" name="search" class="form-control border-0 bg-transparent"
-                       placeholder="Search content or customer..." value="{{ request.args.get('search', '') }}">
+                    placeholder="Search content, dept..." value="{{ request.args.get('search', '') }}">
+            </div>
+        </div>
+
+        <!-- BIG CARDS FILTER ROW -->
+        <div class="row row-cols-1 row-cols-md-5 g-3">
+            
+            <!-- 1. ALL TASKS -->
+            <div class="col">
+                <button type="submit" name="type" value="" class="btn p-0 w-100 h-100 border-0 text-start">
+                    <div class="card h-100 shadow-sm transition-all {% if not request.args.get('type') %}bg-success text-white border-success ring-2{% else %}bg-light text-muted border-0 hover-lift{% endif %}">
+                        <div class="card-body p-3 d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" 
+                                 style="width: 40px; height: 40px; background-color: rgba(255,255,255,0.2);">
+                                <i class="bi bi-grid fs-5"></i>
+                            </div>
+                            <div class="d-flex flex-column">
+                                <span class="fw-bold fs-6">All Work</span>
+                                <span class="small opacity-75">Overview</span>
+                            </div>
+                        </div>
+                    </div>
+                </button>
             </div>
 
-            <select name="status" class="form-select form-select-sm bg-light border-0 rounded-pill px-4" onchange="this.form.submit()" style="width: 160px;">
-                <option value="">-- All Statuses --</option>
-                <option value="Not_yet" {% if request.args.get('status') == 'Not_yet' %}selected{% endif %}>Not yet</option>
-                <option value="Done" {% if request.args.get('status') == 'Done' %}selected{% endif %}>Done</option>
-                <option value="Missed" {% if request.args.get('status') == 'Missed' %}selected{% endif %}>Missed</option>
-            </select>
-        </form>
-    </div>
-
-    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-        <div class="table-responsive">
-            <table class="table align-middle mb-0 table-hover bg-white">
-                <thead class="bg-light text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.05rem;">
-                    <tr>
-                        <th class="ps-4 py-3 text-muted" style="width: 60px;">NO.</th>
-                        <th class="text-muted" style="max-width: 400px;">TODO CONTENT</th>
-                        <th class="text-muted">TIME (UTC+7)</th>
-                        <th class="text-muted">DEADLINE</th>
-                        <th class="text-muted">ASSIGNEE</th>
-                        <th class="text-center text-muted">STATUS</th>
-                        <th class="pe-4 text-end text-muted">ACTIONS</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for task in tasks %}
-                    <!-- ✅ ADDED: onclick for whole row, cursor pointer -->
-                    <tr style="cursor: pointer;" onclick="window.location.href='/task/detail/{{ task.id }}'">
-                        <td class="ps-4">
-                            <span class="text-muted fw-bold">{{ loop.index }}</span>
-                        </td>
-                        <td class="py-3" style="max-width: 400px;">
+            <!-- 2. CUSTOMER -->
+            <div class="col">
+                <button type="submit" name="type" value="customer" class="btn p-0 w-100 h-100 border-0 text-start">
+                    <div class="card h-100 shadow-sm transition-all {% if request.args.get('type') == 'customer' %}bg-info text-white border-info ring-2{% else %}bg-info-subtle bg-opacity-10 text-dark border-0 hover-lift{% endif %}">
+                        <div class="card-body p-3 d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 bg-info text-white" 
+                                 style="width: 40px; height: 40px;">
+                                <i class="bi bi-person-vcard fs-5"></i>
+                            </div>
                             <div class="d-flex flex-column">
-                                <span class="fw-bold text-dark" style="font-size: 0.95rem; line-height: 1.3;">
-                                    {{ task.todo_content }}
-                                </span>
-                                <span class="text-muted" style="font-size: 0.75rem; margin-top: 2px;">
-                                    <i class="bi bi-person-vcard me-1"></i>{{ task.customer_name if task.customer_name else 'N/A' }}
-                                </span>
-                                {% if task.attachment %}
-                                <div class="mt-1">
-                                    <!-- ✅ Stop propagation to prevent row click -->
-                                    <a href="{{ url_for('static', filename='uploads/' + task.attachment) }}" target="_blank" 
-                                       class="badge bg-light text-secondary border text-decoration-none"
-                                       onclick="event.stopPropagation()">
-                                        <i class="bi bi-paperclip me-1"></i>Attachment
-                                    </a>
-                                </div>
-                                {% endif %}
+                                <span class="fw-bold fs-6">Customer</span>
+                                <span class="small opacity-75">Client tasks</span>
                             </div>
-                        </td>
-                        <td class="small text-secondary fw-medium">
-                            <i class="bi bi-clock-history me-1"></i>{{ task.updated_at.strftime('%H:%M %d/%m') if task.updated_at else '---' }}
-                        </td>
+                        </div>
+                    </div>
+                </button>
+            </div>
 
-                        <td class="small text-secondary fw-medium">
-                            {% if task.due_at %}
-                                <i class="bi bi-calendar2-event me-1"></i>{{ task.due_at.strftime('%H:%M %d/%m') }}
-                            {% else %}
-                                ---
-                            {% endif %}
-                        </td>
-
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 28px; height: 28px; font-size: 0.8rem; font-weight: bold;">
-                                    {{ task.assignee[0].upper() if task.assignee and task.assignee != '---' else '?' }}
-                                </div>
-                                <span class="small fw-semibold text-dark">{{ task.assignee }}</span>
+            <!-- 3. CORP -->
+            <div class="col">
+                <button type="submit" name="type" value="corp" class="btn p-0 w-100 h-100 border-0 text-start">
+                    <div class="card h-100 shadow-sm transition-all {% if request.args.get('type') == 'corp' %}bg-primary text-white border-primary ring-2{% else %}bg-primary-subtle bg-opacity-10 text-dark border-0 hover-lift{% endif %}">
+                        <div class="card-body p-3 d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 bg-primary text-white" 
+                                 style="width: 40px; height: 40px;">
+                                <i class="bi bi-building fs-5"></i>
                             </div>
-                        </td>
-                        <td class="text-center">
-                            <!-- ✅ Stop propagation -->
-                            <button class="btn p-0 border-0 shadow-none status-toggle-btn"
-                                    onclick="event.stopPropagation(); toggleTaskStatus(this, '{{ task.id }}', '{{ task.status }}')">
-                                {% if task.status == 'Done' %}
-                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2">Done</span>
-                                {% elif task.status == 'Missed' %}
-                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3 py-2">Missed</span>
-                                {% else %}
-                                    <span class="badge bg-info-subtle text-info border border-info-subtle rounded-pill px-3 py-2">Not yet</span>
-                                {% endif %}
-                            </button>
-                        </td>
-
-                        <td class="pe-4 text-end">
-                            {% set can_manage = (current_user.role == 'admin') or (task.user_id|string == current_user.id|string) %}
-                            <!-- ✅ Stop propagation -->
-                            <div class="dropdown" onclick="event.stopPropagation()">
-                                <button class="btn btn-link text-muted p-0 shadow-none" data-bs-toggle="dropdown">
-                                    <i class="bi bi-three-dots-vertical fs-5"></i>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
-                                    
-                                    <!-- ✅ New Button: Send Telegram (For Customer Task) -->
-                                    <li>
-                                        <form action="/task/send-telegram/{{ task.id }}" method="POST" class="m-0">
-                                            <button type="submit" class="dropdown-item rounded-2">
-                                                <i class="bi bi-telegram me-2 text-primary"></i>Send Telegram
-                                            </button>
-                                        </form>
-                                    </li>
-                                    
-                                    <li>
-                                        <!-- ✅ Link to Detail Page -->
-                                        <a class="dropdown-item rounded-2" href="/task/detail/{{ task.id }}">
-                                            <i class="bi bi-eye me-2"></i>View Detail
-                                        </a>
-                                    </li>
-                                    
-                                    {% if can_manage %}
-                                    <li>
-                                        <button class="dropdown-item rounded-2" data-bs-toggle="modal" data-bs-target="#editTask{{ task.id }}">
-                                            <i class="bi bi-pencil me-2"></i>Edit
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li>
-                                        <form action="/task/delete/{{ task.id }}" method="POST" onsubmit="return confirm('Delete this task?');" class="m-0">
-                                            <button type="submit" class="dropdown-item text-danger rounded-2">
-                                                <i class="bi bi-trash me-2"></i>Delete
-                                            </button>
-                                        </form>
-                                    </li>
-                                    {% else %}
-                                    <li>
-                                        <span class="dropdown-item text-muted rounded-2">
-                                            <i class="bi bi-shield-lock me-2"></i>No permission
-                                        </span>
-                                    </li>
-                                    {% endif %}
-                                </ul>
+                            <div class="d-flex flex-column">
+                                <span class="fw-bold fs-6">Corporate</span>
+                                <span class="small opacity-75">Internal ops</span>
                             </div>
-                        </td>
+                        </div>
+                    </div>
+                </button>
+            </div>
 
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <!-- 4. PERSONAL -->
+            <div class="col">
+                <button type="submit" name="type" value="personal" class="btn p-0 w-100 h-100 border-0 text-start">
+                    <div class="card h-100 shadow-sm transition-all {% if request.args.get('type') == 'personal' %}bg-secondary text-white border-secondary ring-2{% else %}bg-secondary-subtle bg-opacity-10 text-dark border-0 hover-lift{% endif %}">
+                        <div class="card-body p-3 d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 bg-secondary text-white" 
+                                 style="width: 40px; height: 40px;">
+                                <i class="bi bi-person fs-5"></i>
+                            </div>
+                            <div class="d-flex flex-column">
+                                <span class="fw-bold fs-6">Personal</span>
+                                <span class="small opacity-75">Private todos</span>
+                            </div>
+                        </div>
+                    </div>
+                </button>
+            </div>
+
+            <!-- 5. REQUEST -->
+            <div class="col">
+                <button type="submit" name="type" value="request" class="btn p-0 w-100 h-100 border-0 text-start">
+                    <div class="card h-100 shadow-sm transition-all {% if request.args.get('type') == 'request' %}bg-warning text-dark border-warning ring-2{% else %}bg-warning-subtle bg-opacity-10 text-dark border-0 hover-lift{% endif %}">
+                        <div class="card-body p-3 d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 bg-warning text-dark" 
+                                 style="width: 40px; height: 40px;">
+                                <i class="bi bi-chat-left-dots fs-5"></i>
+                            </div>
+                            <div class="d-flex flex-column">
+                                <span class="fw-bold fs-6">Request</span>
+                                <span class="small opacity-75">Manual reqs</span>
+                            </div>
+                        </div>
+                    </div>
+                </button>
+            </div>
+
+            <!-- 6. DEPARTMENT -->
+            <div class="col">
+                <button type="submit" name="type" value="department" class="btn p-0 w-100 h-100 border-0 text-start">
+                    <div class="card h-100 shadow-sm transition-all {% if request.args.get('type') == 'department' %}bg-success text-white border-success ring-2{% else %}bg-success-subtle bg-opacity-10 text-dark border-0 hover-lift{% endif %}">
+                        <div class="card-body p-3 d-flex align-items-center gap-3">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 bg-success text-white" 
+                                 style="width: 40px; height: 40px;">
+                                <i class="bi bi-building-fill-gear fs-5"></i>
+                            </div>
+                            <div class="d-flex flex-column">
+                                <span class="fw-bold fs-6">Department</span>
+                                <span class="small opacity-75">Team tasks</span>
+                            </div>
+                        </div>
+                    </div>
+                </button>
+            </div>
         </div>
+      </form>
+  </div>
+
+  <!-- TABLE SECTION -->
+  <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0 table-hover bg-white">
+        <thead class="bg-light text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.05rem;">
+          <tr>
+            <th class="ps-4 py-3 text-muted">TYPE</th>
+            <th class="text-muted" style="max-width: 350px;">CONTENT</th>
+            <th class="text-muted">CUSTOMER</th>
+            <th class="text-muted">DEPARTMENT</th>
+            <th class="text-muted">NOTE</th>
+            <th class="text-muted">DEADLINE</th>
+            <th class="text-muted">ASSIGNEE</th>
+            <th class="text-center text-muted">STATUS</th>
+            <th class="pe-4 text-end text-muted">ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in tasks %}
+          <!-- Generic Row Link -->
+          <tr style="cursor: pointer;" onclick="window.location.href='/task/detail/{{ t.id }}'">
+            
+            <td class="ps-4">
+               <span class="badge border rounded-pill {{ type_badges.get(t.kind, 'bg-light text-dark') }} fw-normal text-capitalize">
+                  {{ t.kind }}
+               </span>
+            </td>
+
+            <td style="max-width: 350px;">
+              <div class="d-flex flex-column">
+                <span class="fw-bold text-dark" style="font-size: 0.95rem;">
+                  {{ t.todo_content }}
+                </span>
+                <span class="text-muted small">
+                  Created by {{ t.assigned_by or 'System' }} 
+                  {% if t.created_at %} • {{ t.created_at.strftime('%d/%m') }}{% endif %}
+                </span>
+                {% if t.attachment %}
+                <div class="mt-1">
+                    <span class="badge bg-light text-secondary border text-decoration-none" onclick="event.stopPropagation()">
+                        <i class="bi bi-paperclip me-1"></i>File
+                    </span>
+                </div>
+                {% endif %}
+              </div>
+            </td>
+
+            <td>
+               {% if t.customer_name %}
+                 <span class="fw-medium text-secondary">{{ t.customer_name }}</span>
+               {% endif %}
+            </td>
+
+            <td>
+               {% if t.department %}
+                 <span class="badge bg-light text-dark border">{{ t.department }}</span>
+               {% endif %}
+            </td>
+
+            <td>
+               {% if t.note %}
+                 <span class="badge bg-warning-subtle text-dark border border-warning-subtle">{{ t.note }}</span>
+               {% endif %}
+            </td>
+
+            <td class="small text-secondary fw-medium">
+              {% if t.due_at %}
+                <span class="{% if t.status == 'overdue' %}text-danger fw-bold{% endif %}">
+                    {{ t.due_at.strftime('%H:%M %d/%m') }}
+                </span>
+              {% else %}
+                ---
+              {% endif %}
+            </td>
+
+            <td>
+              <div class="d-flex align-items-center">
+                 {% if (t.kind == 'corp' or t.kind == 'department') and t.assignees|length > 1 %}
+                    <span class="badge bg-light text-dark border rounded-pill">{{ t.assignees|length }} Users</span>
+                 {% else %}
+                    <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2"
+                         style="width: 26px; height: 26px; font-size: 0.75rem; font-weight: bold;">
+                      {{ t.assignee[0].upper() if t.assignee and t.assignee != '---' else '?' }}
+                    </div>
+                    <span class="small">{{ t.assignee }}</span>
+                 {% endif %}
+              </div>
+            </td>
+
+            <td class="text-center">
+              {% set s_display = t.status if t.status in statuses else 'todo' %}
+              
+                {# --- Standard Status Dropdown --- #}
+              <div class="dropdown" onclick="event.stopPropagation()">
+                  <button class="btn btn-sm rounded-pill px-3 border dropdown-toggle {{ status_colors.get(s_display, 'bg-light') }}"
+                          type="button" data-bs-toggle="dropdown">
+                    {{ s_display|upper }}
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end shadow-sm border-0 p-2 rounded-3">
+                    {% for s in statuses %}
+                        <li><button class="dropdown-item rounded-2" onclick="quickUpdateStatus('{{ t.id }}', '{{ s }}')">{{ s|upper }}</button></li>
+                    {% endfor %}
+                  </ul>
+              </div>
+            </td>
+
+            <td class="pe-4 text-end">
+              <div class="dropdown" onclick="event.stopPropagation()">
+                <button class="btn btn-link text-muted p-0 shadow-none" data-bs-toggle="dropdown">
+                  <i class="bi bi-three-dots-vertical"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end border-0 shadow rounded-3 p-2">
+                  <li>
+                    <a class="dropdown-item rounded-2" href="/task/detail/{{ t.id }}">
+                        <i class="bi bi-eye me-2"></i> View Detail
+                    </a>
+                  </li>
+                  <li>
+                    <!-- ✅ FIX: DEPT TASK TELEGRAM -->
+                    {% if t.kind == 'department' %}
+                        <form action="/department-task/send-telegram/{{ t.id }}" method="POST" class="m-0">
+                             <button class="dropdown-item rounded-2"><i class="bi bi-telegram me-2 text-primary"></i>Notify Dept</button>
+                        </form>
+                    {% elif t.kind == 'corp' %}
+                        <form action="/corp-task/send-telegram/{{ t.id }}" method="POST" class="m-0">
+                             <button class="dropdown-item rounded-2"><i class="bi bi-telegram me-2 text-primary"></i>Notify Corp</button>
+                        </form>
+                    {% else %}
+                        <form action="/task/send-telegram/{{ t.id }}" method="POST" class="m-0">
+                             <button class="dropdown-item rounded-2"><i class="bi bi-telegram me-2 text-primary"></i>Notify</button>
+                        </form>
+                    {% endif %}
+                  </li>
+                  
+                  {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
+                  {# Rule: Personal tasks (own) -> Delete. Admin/Superadmin -> Delete. Others (User viewing non-personal) -> Request Delete #}
+                  
+                  {% set is_own_personal = (t.kind == 'personal' and t.user_id|string == current_user.id|string) %}
+                  {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
+                  
+                  {% if is_own_personal or is_admin_or_super %}
+                      <li><hr class="dropdown-divider"></li>
+                      <li>
+                          <form action="/task/delete/{{ t.id }}" method="POST" onsubmit="return confirm('Delete task?')" class="m-0">
+                            <button class="dropdown-item text-danger rounded-2"><i class="bi bi-trash me-2"></i> Delete</button>
+                          </form>
+                      </li>
+                  {% else %}
+                      <!-- User viewing Non-Personal (Corp/Dept/Customer) -> Request Delete -->
+                      <li><hr class="dropdown-divider"></li>
+                      <li>
+                          <button class="dropdown-item text-warning rounded-2" onclick="openRequestDeleteModal('{{ t.id }}')">
+                              <i class="bi bi-exclamation-circle me-2"></i> Request Delete
+                          </button>
+                      </li>
+                  {% endif %}
+                </ul>
+              </div>
+            </td>
+
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
+  </div>
 </div>
 
-{% for task in tasks %}
-{% set can_manage = (current_user.role == 'admin') or (task.user_id|string == current_user.id|string) %}
-{% if can_manage %}
-<div class="modal fade" id="editTask{{ task.id }}" tabindex="-1" aria-hidden="true">
+{# --- RESTORED MODALS (100% Original Logic) --- #}
+
+{# --- MODAL 1: CUSTOMER TASK --- #}
+<div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-            <div class="modal-header bg-primary text-white py-3 px-4">
-                <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i> Edit Task</h5>
+            <div class="modal-header bg-info text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-person-vcard me-2"></i>Add Customer Task</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <!-- Added enctype for file upload -->
-            <form action="/task/update/{{ task.id }}" method="POST" enctype="multipart/form-data">
+            <form action="/task/add" method="POST" enctype="multipart/form-data">
                 <div class="modal-body p-4">
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-muted small">TODO CONTENT</label>
-                        <textarea name="todo_content" class="form-control rounded-3" rows="3" required>{{ task.todo_content }}</textarea>
+                        <label class="form-label fw-bold text-muted small">CONTENT</label>
+                        <textarea name="todo_content" class="form-control rounded-3" rows="2" required></textarea>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
-                        <input type="text" name="customer_name" class="form-control rounded-3" value="{{ task.customer_name }}">
+                        <input type="text" name="customer_name" class="form-control rounded-3" required>
                     </div>
-
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold text-muted small">ASSIGNEE</label>
-                            {% if current_user.role == 'admin' %}
-                            <select name="assigned_user_id" class="form-select rounded-3">
-                                {% for u in users_list %}
-                                <option value="{{ u._id }}" {% if task.assigned_to|string == u._id|string %}selected{% endif %}>
-                                    {{ u.username }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            {% else %}
-                            <input type="text" class="form-control rounded-3 bg-light" value="{{ task.assignee }}" readonly disabled>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold text-muted small">STATUS</label>
-                            <select name="status" class="form-select rounded-3">
-                                <option value="Not_yet" {% if task.status == 'Not_yet' %}selected{% endif %}>Not yet</option>
-                                <option value="Done" {% if task.status == 'Done' %}selected{% endif %}>Done</option>
-                                <option value="Missed" {% if task.status == 'Missed' %}selected{% endif %}>Missed</option>
-                            </select>
-                        </div>
+                    {% if current_user.role in ['superadmin', 'admin'] %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">ASSIGN TO</label>
+                        <select name="assigned_user_id" class="form-select rounded-3">
+                            {% for u in users_list %}
+                            <option value="{{ u._id }}">{{ u.username }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
-
-                    <div class="mb-3 mt-3">
-                        <label class="form-label fw-bold text-muted small">DEADLINE (optional)</label>
-                        <input type="datetime-local" name="due_at" class="form-control rounded-3"
-                               value="{% if task.due_at %}{{ task.due_at.strftime('%Y-%m-%dT%H:%M') }}{% endif %}">
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEADLINE</label>
+                        <input type="datetime-local" name="due_at" class="form-control rounded-3">
                     </div>
-                    
-                    <div class="mb-3 mt-3">
-                        <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">FILE</label>
                         <input type="file" name="attachment" class="form-control rounded-3">
-                        {% if task.attachment %}
-                        <div class="small text-success mt-1">Current file: {{ task.attachment }}</div>
-                        {% endif %}
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
                     <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Save Changes</button>
+                    <button type="submit" class="btn btn-info text-white rounded-pill px-4 shadow-sm">Create</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
-{% endif %}
-{% endfor %}
 
-<div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
+{# --- MODAL 2: CORP TASK --- #}
+<div class="modal fade" id="addCorpTaskModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
             <div class="modal-header bg-primary text-white py-3 px-4">
-                <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i> Create Manual Task</h5>
+                <h5 class="modal-title fw-bold"><i class="bi bi-building me-2"></i>Add Corporate Task</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <!-- Added enctype for file upload -->
-            <form action="/task/add" method="POST" enctype="multipart/form-data">
+            <form action="/corp-task/add" method="POST" enctype="multipart/form-data">
                 <div class="modal-body p-4">
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-muted small">TODO CONTENT</label>
-                        <textarea name="todo_content" class="form-control rounded-3" rows="3" required placeholder="What needs to be done?"></textarea>
+                        <label class="form-label fw-bold text-muted small">TITLE / CONTENT</label>
+                        <textarea name="title" class="form-control rounded-3" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
+                        <select name="department" class="form-select rounded-3">
+                            {% for d in corp_departments %}
+                            <option value="{{ d }}">{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
+                        <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                            {% for u in users_list %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="c_assign_{{ u._id }}">
+                                <label class="form-check-label" for="c_assign_{{ u._id }}">{{ u.username }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEADLINE</label>
+                        <input type="datetime-local" name="due_at" class="form-control rounded-3" required>
+                    </div>
+                    <div class="mb-3">
+                         <label class="form-label fw-bold text-muted small">FILE</label>
+                         <input type="file" name="attachment" class="form-control rounded-3">
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# --- MODAL 3: PERSONAL TASK --- #}
+<div class="modal fade" id="addPersonalTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-secondary text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-person me-2"></i>Add Personal Task</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/personal-task/add" method="POST" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">TITLE</label>
+                        <input type="text" name="title" class="form-control rounded-3" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DESCRIPTION</label>
+                        <textarea name="description" class="form-control rounded-3" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEADLINE</label>
+                        <input type="datetime-local" name="due_at" class="form-control rounded-3">
+                    </div>
+                    <div class="mb-3">
+                         <label class="form-label fw-bold text-muted small">FILE</label>
+                         <input type="file" name="attachment" class="form-control rounded-3">
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-secondary rounded-pill px-4 shadow-sm">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# --- MODAL 4: ADD REQUEST (Merged) --- #}
+<div class="modal fade" id="addRequestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-warning text-dark py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-chat-left-dots me-2"></i>Create Manual Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/request/customer/add" method="POST">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">REQUEST CONTENT</label>
+                        <textarea name="content" class="form-control rounded-3" rows="3" required placeholder="Enter request details..."></textarea>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
                         <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
                     </div>
-
-                    {% if current_user.role == 'admin' %}
-                    <div class="mb-3">
-                        <label class="form-label fw-bold text-muted small">ASSIGN TO STAFF</label>
-                        <select name="assigned_user_id" class="form-select rounded-3">
-                            {% for u in users_list %}
-                            <option value="{{ u._id }}" {% if u._id|string == current_user.id|string %}selected{% endif %}>
-                                {{ u.username }} {% if u._id|string == current_user.id|string %}(You){% endif %}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    {% endif %}
-
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold text-muted small">CREATOR</label>
-                            <input type="text" class="form-control rounded-3 bg-light" value="{{ current_user.username }}" readonly disabled>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold text-muted small">STATUS</label>
-                            <select name="status" class="form-select rounded-3">
-                                <option value="Not_yet" selected>Not yet</option>
-                                <option value="Done">Done</option>
-                                <option value="Missed">Missed</option>
+                            <label class="form-label fw-bold text-muted small">NOTE (Old Status)</label>
+                            <select name="note" class="form-select rounded-3">
+                                {% for s in request_statuses %}
+                                <option value="{{ s }}" {% if s == 'Request' %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
                             </select>
                         </div>
-                    </div>
-
-                    <div class="mb-3 mt-3">
-                        <label class="form-label fw-bold text-muted small">DEADLINE (optional)</label>
-                        <input type="datetime-local" name="due_at" class="form-control rounded-3">
-                    </div>
-                    
-                    <div class="mb-3 mt-3">
-                        <label class="form-label fw-bold text-muted small">ATTACHMENT</label>
-                        <input type="file" name="attachment" class="form-control rounded-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-muted small">BUSINESS TYPE</label>
+                            <select name="business_type" class="form-select rounded-3">
+                                {% for b in business_types %}
+                                <option value="{{ b }}" {% if b == 'New' %}selected{% endif %}>{{ b }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
                     <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create Task</button>
+                    <button type="submit" class="btn btn-warning rounded-pill px-4 shadow-sm">Create Request</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- ✅ Popup Notifications Modal -->
-<div class="modal fade" id="notifyModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-      <div class="modal-header bg-dark text-white py-3 px-4">
-        <h5 class="modal-title fw-bold"><i class="bi bi-bell-fill me-2"></i>New Assigned Tasks</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body p-4">
-        <div id="notifyList" class="d-flex flex-column gap-3"></div>
-        <div id="notifyEmpty" class="text-muted text-center py-4" style="display:none;">
-          No new tasks.
+{# --- MODAL 5: ADD DEPARTMENT TASK --- #}
+<div class="modal fade" id="addDepartmentTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-success text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-building-fill-gear me-2"></i>Add Department Task</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/department-task/add" method="POST" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">TITLE / CONTENT</label>
+                        <textarea name="title" class="form-control rounded-3" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
+                        
+                        <!-- ✅ FIX: Superadmin gets Select, others get Read-only -->
+                        {% if current_user.role == 'superadmin' %}
+                            <select name="department" class="form-select rounded-3">
+                                {% for d in department_task_departments %}
+                                <option value="{{ d }}">{{ d }}</option>
+                                {% endfor %}
+                            </select>
+                        {% else %}
+                            <input type="text" class="form-control rounded-3" value="{{ current_user.department }}" disabled>
+                            <input type="hidden" name="department" value="{{ current_user.department }}">
+                            <div class="form-text text-muted">You can only create tasks for your department.</div>
+                        {% endif %}
+                        
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
+                        <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                            {% for u in users_list %}
+                            <div class="form-check">
+                                <!-- Check Logic: Admin disabled if not same dept (unless Superadmin). -->
+                                <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="d_assign_{{ u._id }}"
+                                {% if current_user.role != 'superadmin' and u.department != current_user.department %}disabled{% endif %}
+                                {% if u._id|string == current_user.id|string %}checked{% endif %}>
+                                <label class="form-check-label" for="d_assign_{{ u._id }}">{{ u.username }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">DEADLINE</label>
+                        <input type="datetime-local" name="due_at" class="form-control rounded-3" required>
+                    </div>
+                    <div class="mb-3">
+                         <label class="form-label fw-bold text-muted small">NOTE</label>
+                         <textarea name="note" class="form-control rounded-3" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                         <label class="form-label fw-bold text-muted small">FILE</label>
+                         <input type="file" name="attachment" class="form-control rounded-3">
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success rounded-pill px-4 shadow-sm">Create</button>
+                </div>
+            </form>
         </div>
+    </div>
+</div>
+
+<script>
+    // Add form validation for department task assignees
+    document.getElementById('addDepartmentTaskModal').addEventListener('submit', function(e) {
+        const assignedCheckboxes = this.querySelectorAll('input[name="assigned_user_ids"]:checked:not(:disabled)');
+        if (assignedCheckboxes.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one assignee for the department task.');
+        }
+    });
+</script>
+
+{# --- MODAL 5: REQUEST DELETE (GENERIC) --- #}
+<div class="modal fade" id="requestDeleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header border-0 bg-warning py-2 px-3 text-dark">
+        <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Request Delete</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-footer border-0 bg-light px-4 py-3">
-        <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-primary rounded-pill px-4" onclick="ackAllNotifications()">Mark as read</button>
-      </div>
+      <form id="requestDeleteForm" method="POST">
+        <div class="modal-body p-3">
+          <p class="small text-muted mb-2">You don't have permission to delete this task directly. Submit a request to Admin?</p>
+          <label class="form-label small fw-bold">Reason:</label>
+          <textarea name="reason" class="form-control form-control-sm" rows="3" required placeholder="Why delete this task?"></textarea>
+        </div>
+        <div class="modal-footer border-0 p-2 bg-light">
+          <button type="submit" class="btn btn-warning btn-sm w-100 rounded-pill">Submit Request</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
 
+<style>
+/* Custom utility for active card rings */
+.ring-2 {
+    box-shadow: 0 0 0 4px rgba(0,0,0,0.05);
+    transform: translateY(-2px);
+}
+.hover-lift {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.08) !important;
+}
+.transition-all {
+    transition: all 0.2s ease-in-out;
+}
+</style>
+
 <script>
-    async function toggleTaskStatus(button, taskId, currentStatus) {
-        let nextStatus = 'Not_yet';
-        if (currentStatus === 'Not_yet' || currentStatus === 'New') nextStatus = 'Done';
-        else if (currentStatus === 'Done') nextStatus = 'Missed';
-
-        button.style.opacity = '0.5';
-        button.disabled = true;
-
+async function quickUpdateStatus(taskId, newStatus) {
+    try {
         const formData = new FormData();
-        formData.append('status', nextStatus);
-
-        try {
-            const response = await fetch(`/task/quick-update/${taskId}`, {
-                method: 'POST',
-                body: formData,
-                headers: { 'X-Requested-With': 'XMLHttpRequest' }
-            });
-            const result = await response.json();
-            if (result.status === 'success') location.reload();
-        } catch (error) {
-            console.error('Error:', error);
-            button.style.opacity = '1';
-            button.disabled = false;
-        }
-    }
-
-    // --- Notifications ---
-    let __notifyIds = [];
-
-    function renderNotify(items) {
-        const list = document.getElementById('notifyList');
-        const empty = document.getElementById('notifyEmpty');
-        list.innerHTML = '';
-        __notifyIds = [];
-
-        if (!items || items.length === 0) {
-            empty.style.display = 'block';
-            return;
-        }
-        empty.style.display = 'none';
-
-        items.forEach(it => {
-            __notifyIds.push(it.id);
-            const due = it.due_at ? `<div class="small text-danger"><i class="bi bi-calendar2-event me-1"></i>Deadline: ${it.due_at}</div>` : '';
-            const cust = it.customer_name ? `<div class="small text-muted"><i class="bi bi-person-vcard me-1"></i>${it.customer_name}</div>` : '';
-            const row = document.createElement('div');
-            row.className = 'p-3 bg-light rounded-3 border';
-            row.innerHTML = `
-                <div class="fw-bold text-dark">${it.todo_content}</div>
-                ${cust}
-                ${due}
-                <div class="small text-muted mt-1"><i class="bi bi-person-check me-1"></i>Assigned by: ${it.assigned_by || '---'} • ${it.assigned_at || ''}</div>
-            `;
-            list.appendChild(row);
+        formData.append('status', newStatus);
+        
+        const res = await fetch(`/task/quick-update/${taskId}`, {
+            method: 'POST',
+            body: formData,
+            headers: {'X-Requested-With': 'XMLHttpRequest'}
         });
-    }
-
-    async function fetchNotifications() {
-        try {
-            const res = await fetch('/api/notifications', { headers: { 'X-Requested-With': 'XMLHttpRequest' }});
-            const data = await res.json();
-            const items = data.items || [];
-            renderNotify(items);
-
-            if (items.length > 0) {
-                const modal = new bootstrap.Modal(document.getElementById('notifyModal'));
-                modal.show();
-            }
-        } catch (e) {
-            console.error('notify error', e);
+        
+        const data = await res.json();
+        if (data.status === 'success') {
+            window.location.reload();
+        } else {
+            alert('Failed to update status: ' + (data.message || 'Unknown error'));
         }
+    } catch(e) {
+        console.error(e);
+        alert('Network Error');
     }
+}
 
-    async function ackAllNotifications() {
-        if (!__notifyIds.length) return;
-        try {
-            await fetch('/api/notifications/ack', {
-                method: 'POST',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ids: __notifyIds})
-            });
-            const modalEl = document.getElementById('notifyModal');
-            const modal = bootstrap.Modal.getInstance(modalEl);
-            if (modal) modal.hide();
-        } catch (e) {
-            console.error('ack error', e);
-        }
-    }
-
-    // Show popup when open /tasks
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchNotifications();
-    });
+function openRequestDeleteModal(taskId) {
+    const form = document.getElementById('requestDeleteForm');
+    form.action = `/task/request-delete-generic/${taskId}`;
+    const modal = new bootstrap.Modal(document.getElementById('requestDeleteModal'));
+    modal.show();
+}
 </script>
 
-<style>
-    .status-toggle-btn { transition: transform 0.15s ease; cursor: pointer; }
-    .status-toggle-btn:hover { transform: scale(1.05); }
-    .table-hover tbody tr:hover { background-color: #f8faff !important; }
-    .badge { font-weight: 600; font-size: 0.75rem; }
-</style>
 {% endblock %}

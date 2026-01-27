@@ -12,7 +12,9 @@
             <h4 class="fw-bold mt-2 mb-0">User Profile: {{ staff.username }}</h4>
         </div>
         <div>
-            {% if staff.role == 'admin' %}
+            {% if staff.role == 'superadmin' %}
+                <span class="badge bg-dark fs-6 rounded-pill px-3">Superadmin</span>
+            {% elif staff.role == 'admin' %}
                 <span class="badge bg-danger fs-6 rounded-pill px-3">Admin</span>
             {% else %}
                 <span class="badge bg-success fs-6 rounded-pill px-3">User</span>
@@ -46,19 +48,24 @@
                     
                     <hr class="my-4 opacity-25">
 
-                    <!-- Role Update -->
+                    <!-- Role Update (ONLY SUPERADMIN) -->
+                    {% if current_user.role == 'superadmin' %}
                     <form action="/admin/user/update_role/{{ staff._id }}" method="POST" class="mb-3 text-start">
-                        <label class="form-label small fw-bold text-muted">Role</label>
+                        <label class="form-label small fw-bold text-muted">Role (Superadmin Only)</label>
                         <select name="role" class="form-select rounded-3" onchange="this.form.submit()">
+                            <option value="superadmin" {% if staff.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
                             <option value="user" {% if staff.role == 'user' %}selected{% endif %}>User</option>
                             <option value="admin" {% if staff.role == 'admin' %}selected{% endif %}>Admin</option>
                         </select>
                     </form>
+                    {% endif %}
 
-                    <!-- Department Update -->
+                    <!-- Department Update (ONLY SUPERADMIN) -->
+                    {% if current_user.role == 'superadmin' %}
                     <form action="/admin/user/update_department/{{ staff._id }}" method="POST" class="mb-3 text-start">
                         <label class="form-label small fw-bold text-muted">Department</label>
                         <select name="department" class="form-select rounded-3" onchange="this.form.submit()">
+                            <option value="">-- Unassigned --</option>
                             {% if not staff.get('department') %}
                                 <option value="" selected>-- Unassigned --</option>
                             {% endif %}
@@ -67,8 +74,15 @@
                             {% endfor %}
                         </select>
                     </form>
+                    {% else %}
+                    <div class="mb-3 text-start">
+                        <label class="form-label small fw-bold text-muted">Department</label>
+                        <input type="text" class="form-control rounded-3" value="{{ staff.department or 'None' }}" disabled>
+                    </div>
+                    {% endif %}
 
-                    <!-- ✅ Admin Update Telegram ID -->
+                    <!-- ✅ Admin/Superadmin Update Telegram ID -->
+                    {% if current_user.role in ['superadmin', 'admin'] %}
                     <form action="/admin/user/update-telegram/{{ staff._id }}" method="POST" class="mb-3 text-start">
                         <label class="form-label small fw-bold text-muted">Telegram Chat ID</label>
                         <div class="input-group">
@@ -79,10 +93,12 @@
                             </button>
                         </div>
                     </form>
+                    {% endif %}
                 </div>
             </div>
 
             <!-- Delete User -->
+            {% if current_user.role in ['superadmin', 'admin'] %}
             <div class="card border-0 shadow-sm rounded-4 bg-danger-subtle mb-4">
                 <div class="card-body p-4">
                     <h6 class="fw-bold text-danger">Danger Zone</h6>
@@ -92,6 +108,7 @@
                     </form>
                 </div>
             </div>
+            {% endif %}
             
             <!-- Charts -->
             <div class="card border-0 shadow-sm rounded-4 mb-4">
@@ -152,6 +169,9 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link fw-bold" data-bs-toggle="tab" href="#personalTasks">Personal ({{ task_breakdown.personal.total }})</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#departmentTasks">Department ({{ task_breakdown.department.total }})</a>
                         </li>
                     </ul>
                 </div>
@@ -227,37 +247,82 @@
                             {% endif %}
                         </div>
 
-                        <!-- Personal Tasks -->
+                        <!-- Personal Tasks (HIDDEN DETAILS - METRICS ONLY) -->
                         <div class="tab-pane fade" id="personalTasks">
-                            {% if personal_tasks %}
+                            <div class="d-flex flex-column align-items-center justify-content-center py-5 text-center">
+                                <div class="bg-light rounded-circle d-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-shield-lock-fill fs-1 text-secondary opacity-50"></i>
+                                </div>
+                                <h5 class="fw-bold text-dark mb-1">Private Content</h5>
+                                <p class="text-muted mb-4 small" style="max-width: 300px;">
+                                    Personal tasks are private to the user. <br>
+                                    Admin can only view the measurement metrics below.
+                                </p>
+                                
+                                <div class="row g-2 w-100 px-4" style="max-width: 500px;">
+                                    <div class="col-4">
+                                        <div class="p-3 border rounded-3 bg-white shadow-sm">
+                                            <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Total</div>
+                                            <div class="fw-bold fs-4 text-dark">{{ task_breakdown.personal.total }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-3 border rounded-3 bg-white shadow-sm">
+                                            <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Done</div>
+                                            <div class="fw-bold fs-4 text-success">{{ task_breakdown.personal.done }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-3 border rounded-3 bg-white shadow-sm">
+                                            <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Pending</div>
+                                            <div class="fw-bold fs-4 text-warning">{{ task_breakdown.personal.not_yet }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Department Tasks -->
+                        <div class="tab-pane fade" id="departmentTasks">
+                            {% if department_tasks %}
                             <div class="table-responsive">
                                 <table class="table align-middle mb-0 table-hover">
                                     <thead class="bg-light small">
                                         <tr>
                                             <th class="ps-4">Title</th>
+                                            <th>Dept</th>
                                             <th>Status</th>
-                                            <th class="pe-4 text-end">Created</th>
+                                            <th class="pe-4 text-end">Deadline</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {% for t in personal_tasks %}
+                                        {% for t in department_tasks %}
                                         <tr>
                                             <td class="ps-4 fw-medium">{{ t.title }}</td>
+                                            <td><span class="badge bg-light text-dark border">{{ t.department }}</span></td>
                                             <td>
                                                 <span class="badge rounded-pill px-3 
-                                                    {% if t.status == 'Done' %}bg-success{% else %}bg-secondary{% endif %}">
+                                                    {% if t.status == 'done' %}bg-success{% elif t.status == 'overdue' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
                                                     {{ t.status }}
                                                 </span>
                                             </td>
-                                            <td class="pe-4 text-end small text-muted">{{ t.created_at.strftime('%d/%m') }}</td>
+                                            <td class="pe-4 text-end small text-muted">
+                                                {{ t.due_at.strftime('%d/%m') if t.due_at else '-' }}
+                                            </td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
                                 </table>
                             </div>
                             {% else %}
-                                <div class="text-center text-muted py-5">No personal tasks found.</div>
+                                <div class="text-center text-muted py-5">
+                                    <i class="bi bi-building-fill-gear fs-2 d-block mb-2 opacity-25"></i>
+                                    <h5 class="fw-bold text-dark mb-1">No Department Tasks</h5>
+                                    <p class="text-muted small">This user has no department tasks or is not part of a department with tasks.</p>
+                                </div>
                             {% endif %}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -274,7 +339,7 @@
     new Chart(document.getElementById('typeChart'), {
         type: 'doughnut',
         data: {
-            labels: ['Customer', 'Corp', 'Personal'],
+            labels: ['Customer', 'Corp', 'Personal', 'Department'],
             datasets: [{
                 data: dataBreakdown,
                 backgroundColor: ['#0d6efd', '#6610f2', '#fd7e14'],

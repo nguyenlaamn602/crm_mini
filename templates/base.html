@@ -221,33 +221,18 @@
             <i class="bi bi-house-door"></i><span class="nav-text">Warehouse</span>
         </a>
 
-        <!-- TASKS -->
+        <!-- UNIFIED TASKS (UPDATED) -->
         <div class="parent-item" id="tasks-toggle">
             <span class="nav-text">TASKS</span>
             <i class="bi bi-chevron-right parent-arrow" id="tasks-arrow"></i>
         </div>
 
-        <a href="/personal-tasks" class="nav-link {% if request.path.startswith('/personal-tasks') %}active{% endif %}" data-tasks-item>
-            <i class="bi bi-person-check"></i><span class="nav-text">My Tasks</span>
-        </a>
+        <!-- ✅ Simplified: Just one main link, or filtered links -->
         <a href="/tasks" class="nav-link {% if request.path == '/tasks' %}active{% endif %}" data-tasks-item>
-            <i class="bi bi-clipboard-check"></i><span class="nav-text">Customers Tasks</span>
-        </a>
-        <a href="/corp-tasks" class="nav-link {% if request.path.startswith('/corp-tasks') %}active{% endif %}" data-tasks-item>
-            <i class="bi bi-building"></i><span class="nav-text">Corporate Tasks</span>
+            <i class="bi bi-kanban"></i><span class="nav-text">All Tasks</span>
         </a>
 
-        <!-- REQUESTS (NEW SECTION) -->
-        <div class="parent-item" id="requests-toggle">
-            <span class="nav-text">REQUESTS</span>
-            <i class="bi bi-chevron-right parent-arrow" id="requests-arrow"></i>
-        </div>
-
-        <a href="/requests/customer" class="nav-link {% if request.path.startswith('/requests/customer') %}active{% endif %}" data-requests-item>
-            <i class="bi bi-chat-left-dots-fill"></i><span class="nav-text">Request Customer</span>
-        </a>
-
-        <!-- TOOLS (NEW)
+        <!-- TOOLS
         <div class="parent-item" id="tools-toggle">
             <span class="nav-text">TOOLS</span>
             <i class="bi bi-chevron-right parent-arrow" id="tools-arrow"></i>
@@ -258,7 +243,7 @@
         </a> -->
 
         <!-- OPERATIONS -->
-        {% if current_user.role == 'admin' %}
+        {% if current_user.role in ['admin', 'superadmin'] %}
         <div class="parent-item" id="ops-toggle">
             <span class="nav-text">OPERATIONS</span>
             <i class="bi bi-chevron-right parent-arrow" id="ops-arrow"></i>
@@ -270,7 +255,7 @@
         {% endif %}
 
         <!-- ADMIN -->
-        {% if current_user.role == 'admin' %}
+        {% if current_user.role in ['admin', 'superadmin'] %}
         <div class="parent-item" id="admin-toggle">
             <span class="nav-text">ADMINISTRATION</span>
             <i class="bi bi-chevron-right parent-arrow" id="admin-arrow"></i>
@@ -326,16 +311,12 @@ toggleBtn.onclick = () => {
     localStorage.setItem('sidebar-collapsed', collapsed);
 };
 
-/* PARENT TOGGLE LOGIC - FIXED ROBUSTNESS */
+/* PARENT TOGGLE LOGIC */
 document.addEventListener('DOMContentLoaded', () => {
     function setup(toggleId, itemSelector, arrowId, key, autoOpen) {
         const toggle = document.getElementById(toggleId);
         const items = document.querySelectorAll(itemSelector);
         const arrow = document.getElementById(arrowId);
-
-        // ✅ IMPORTANT FIX: Kiểm tra xem toggle và arrow có tồn tại không trước khi gán sự kiện
-        // Vì nếu user không phải admin, các ID này sẽ không có trong HTML
-        if (!toggle || !arrow) return;
 
         let open = localStorage.getItem(key);
         open = open === null ? autoOpen : open === 'true';
@@ -355,9 +336,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setup('tasks-toggle','[data-tasks-item]','tasks-arrow','tasks-open',
         "{{ request.path }}".includes("tasks"));
-
-    setup('requests-toggle','[data-requests-item]','requests-arrow','requests-open',
-        "{{ request.path }}".startsWith("/requests"));
 
     setup('tools-toggle','[data-tools-item]','tools-arrow','tools-open',
         "{{ request.path }}".startsWith("/tools"));

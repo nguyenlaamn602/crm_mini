@@ -24,7 +24,6 @@ BASE_URL = "https://pages.fm/api/v1"
 PUBLIC_V1 = "https://pages.fm/api/public_api/v1"
 PUBLIC_V2 = "https://pages.fm/api/public_api/v2"
 
-# ✅ TELEGRAM API URL
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
 app = Flask(__name__)
@@ -62,16 +61,17 @@ LAST_SYNC_TIMESTAMP = time.time()
 # ---------------------------
 USER_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "CSKH/Sale", "Nhân sự"]
 CORP_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"]
+DEPARTMENT_TASK_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"] # Same as corp for now
 
-CORP_STATUSES = ["Unreceived", "Received", "In_progress", "Pending_approval", "Done", "Cancelled"]
-CORP_STATUS_LABELS = {
-    "Unreceived": "Chưa nhận task",
-    "Received": "Đã nhận task",
-    "In_progress": "Đang làm",
-    "Pending_approval": "Đang chờ duyệt",
-    "Done": "Done",
-    "Cancelled": "Cancelled",
-}
+# ✅ UNIFIED STATUSES (Gộp status)
+UNIFIED_STATUSES = ["todo", "doing", "done", "overdue", "cancelled"]
+
+# ✅ NEW: Customer Request Constants
+REQUEST_STATUSES = ["Request", "Thanh toán", "Lên đơn", "Trouble"]
+BUSINESS_TYPES = ["POD/Dropship", "Warehouse", "Express", "New"]
+
+# ✅ NEW: Roles
+SUPERADMIN_ROLE = "superadmin"
 
 # ---------------------------
 # HELPERS
@@ -127,7 +127,7 @@ def send_telegram_notification(chat_id, text):
 def send_status_change_notification(task_doc, new_status, task_type="Task"):
     try:
         creator = None
-        if task_type == "Corp Task":
+        if task_type == "Corp Task" or task_type == "Department Task":
             creator_name = task_doc.get("assigned_by")
             if creator_name:
                 creator = db.users.find_one({"username": creator_name})
@@ -160,6 +160,10 @@ def find_any_task(tid):
     if t: return t, 'corp_tasks'
     t = db.personal_tasks.find_one({"id": tid})
     if t: return t, 'personal_tasks'
+    t = db.department_tasks.find_one({"id": tid}) # ✅ NEW: Department Tasks
+    if t: return t, 'department_tasks'
+    t = db.customer_requests.find_one({"id": tid})
+    if t: return t, 'customer_requests'
     return None, None
 
 # --- Logic Helpers ---
@@ -170,10 +174,10 @@ def is_overdue(task_doc):
 def mark_missed(task_id: str, reason: str = "auto"):
     t = db.tasks.find_one({"id": task_id})
     if not t: return
-    if t.get("status") == "Done": return
+    if t.get("status") == "done": return
     db.tasks.update_one({"id": task_id}, {
         "$set": {
-            "status": "Missed", "missed_at": now_dt(), "updated_at": now_dt(),
+            "status": "overdue", "missed_at": now_dt(), "updated_at": now_dt(),
             "miss_reason": reason, "missed_notify_pending": True
         }
     })
@@ -193,42 +197,39 @@ def link_customer_for_task(raw_name: str):
     return None, clean_name
 
 def can_user_quick_update(task_doc):
-    if current_user.role == "admin": return True
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: return True
     me = ObjectId(current_user.id)
     return task_doc.get("user_id") == me or task_doc.get("assigned_to") == me
 
 def allowed_next_status(task_doc):
-    if is_overdue(task_doc) and task_doc.get("status") != "Done": return "Missed"
-    if task_doc.get("status") == "Not_yet": return "Done"
-    return "Not_yet"
+    if is_overdue(task_doc) and task_doc.get("status") != "done": return "overdue"
+    if task_doc.get("status") == "todo": return "doing"
+    if task_doc.get("status") == "doing": return "done"
+    return "todo" # Default or cycle back
 
 def next_personal_status(cur):
-    if cur == "Not_yet": return "Done"
-    if cur == "Done": return "Missed"
-    return "Not_yet"
+    if cur == "todo": return "doing"
+    if cur == "doing": return "done"
+    return "todo"
 
-def auto_mark_personal_tasks():
-    now = now_dt()
-    overdue = db.personal_tasks.find({"status": "Not_yet", "due_at": {"$ne": None, "$lt": now}})
-    for t in overdue:
-        db.personal_tasks.update_one({"id": t["id"]}, {"$set": {"status": "Missed", "updated_at": now, "missed_notify_pending": True}})
-
-def can_update_corp_status(corp_task):
-    if current_user.role == "admin": return True
+def can_update_corp_status(corp_task): # ✅ Updated for superadmin
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: return True
     assigned = corp_task.get("assigned_to")
     if isinstance(assigned, ObjectId): return ObjectId(current_user.id) == assigned
     if isinstance(assigned, list): return ObjectId(current_user.id) in assigned
     return False
 
-def can_edit_corp_task(corp_task):
-    if current_user.role == "admin": return True
+def can_edit_corp_task(corp_task): # ✅ Updated for superadmin
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: return True
     assigned = corp_task.get("assigned_to", [])
     if isinstance(assigned, list): return ObjectId(current_user.id) in assigned
     return ObjectId(current_user.id) == assigned
 
 def validate_corp_status_change(new_status: str, corp_task):
-    if new_status not in CORP_STATUSES: return False, "Invalid status"
-    if new_status == "Cancelled" and current_user.role != "admin": return False, "Only admin can cancel"
+    if new_status not in UNIFIED_STATUSES: return False, "Invalid status"
+    # ✅ FIX: Allow Superadmin AND Admin to cancel
+    if new_status == "Cancelled" and current_user.role not in [SUPERADMIN_ROLE, "admin"]: 
+        return False, "Only admin/superadmin can cancel"
     return True, ""
 
 # ---------------------------
@@ -340,10 +341,39 @@ def sync_pancake_conversation_for_customer(customer):
                 return {"page_id": page["id"], "page_username": page["username"], "conversation_id": c["id"]}
     return None
 
-def auto_mark_missed_tasks():
+# ✅ UNIFIED AUTO OVERDUE LOGIC (Replacing individual functions)
+def auto_scan_overdue_tasks():
     now = now_dt()
-    overdue = list(db.tasks.find({"status": "Not_yet", "due_at": {"$ne": None, "$lt": now}}, {"id": 1}))
-    for t in overdue: mark_missed(t.get("id"), reason="auto_deadline")
+    
+    # 1. Normal Tasks (Customer Tasks)
+    db.tasks.update_many(
+        {"status": {"$in": ["todo", "doing", "Not_yet"]}, "due_at": {"$lt": now}},
+        {"$set": {"status": "overdue", "missed_at": now, "updated_at": now, "missed_notify_pending": True}}
+    )
+    
+    # 2. Corp Tasks
+    db.corp_tasks.update_many(
+        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}},
+        {"$set": {"status": "overdue", "updated_at": now}}
+    )
+    
+    # 3. Personal Tasks
+    db.personal_tasks.update_many(
+        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}},
+        {"$set": {"status": "overdue", "updated_at": now, "missed_notify_pending": True}}
+    )
+    
+    # 4. Department Tasks
+    db.department_tasks.update_many(
+        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}},
+        {"$set": {"status": "overdue", "updated_at": now}}
+    )
+    
+    # 5. Customer Requests
+    db.customer_requests.update_many(
+        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}}, # Note: Requests usually have no due_at, but if added
+        {"$set": {"status": "overdue", "updated_at": now}}
+    )
 
 # ---------------------------
 # ROUTES: AUTH
@@ -352,10 +382,10 @@ def auto_mark_missed_tasks():
 def register():
     if request.method == 'POST':
         u, p, dept = request.form.get('username'), request.form.get('password'), request.form.get('department')
-        if db.users.find_one({"username": u}):
+        if db.users.find_one({"username": u}): # ✅ Check for existing username
             flash('Username exists!', 'danger')
             return redirect(url_for('register'))
-        role = 'admin' if db.users.count_documents({}) == 0 else 'user'
+        role = SUPERADMIN_ROLE if db.users.count_documents({}) == 0 else 'user' # ✅ First user is superadmin
         db.users.insert_one({"username": u, "password_hash": generate_password_hash(p), "role": role, "department": dept, "created_at": now_dt()})
         return redirect(url_for('login'))
     return render_template('register.html', departments=USER_DEPARTMENTS)
@@ -387,7 +417,7 @@ def index():
         "express": db.leads.count_documents({"sector": "Express"}),
         "warehouse": db.leads.count_documents({"sector": "Warehouse"}),
         "total_staff": db.users.count_documents({}),
-        "personal_tasks": db.personal_tasks.count_documents({"user_id": ObjectId(current_user.id),"status": {"$ne": "Done"}})
+        "personal_tasks": db.personal_tasks.count_documents({"user_id": ObjectId(current_user.id),"status": {"$ne": "done"}})
     }
 
     user_task_stats = []
@@ -397,13 +427,19 @@ def index():
         uid = u["_id"]
         uid_str = str(uid)
         
-        cus_done = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "Done"})
-        cus_not = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": {"$ne": "Done"}})
+        cus_done = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
+        cus_not = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": {"$ne": "done"}})
         
-        corp_done = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "Done"})
+        corp_done = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
         corp_not = db.corp_tasks.count_documents({
             "assigned_to": {"$in": [uid, uid_str]}, 
-            "status": {"$nin": ["Done", "Cancelled"]}
+            "status": {"$nin": ["done", "cancelled"]}
+        })
+        # ✅ NEW: Department Task counts
+        dept_done = db.department_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
+        dept_not = db.department_tasks.count_documents({
+            "$or": [{"assigned_to": {"$in": [uid, uid_str]}}, {"department": u.get("department")}],
+            "status": {"$nin": ["done", "cancelled"]}
         })
         
         user_task_stats.append({
@@ -413,7 +449,9 @@ def index():
             "cus_done": int(cus_done),
             "cus_not": int(cus_not),
             "corp_done": int(corp_done),
-            "corp_not": int(corp_not),
+            "corp_not": int(corp_not), # ✅ Add dept task counts
+            "dept_done": int(dept_done),
+            "dept_not": int(dept_not),
             "done": int(cus_done + corp_done),
             "not_done": int(cus_not + corp_not)
         })
@@ -441,7 +479,7 @@ def view_sector(name):
     if request.args.get('search'): q["full_name"] = {"$regex": request.args.get('search'), "$options": "i"}
     if request.args.get('status'): q["status"] = request.args.get('status')
     
-    if request.args.get('mode') == 'mine':
+    if request.args.get('mode') == 'mine': # ✅ Only show leads assigned to current user
         q["assigned_to"] = ObjectId(current_user.id)
         
     leads = list(db.leads.find(q).sort("updated_at", -1))
@@ -463,7 +501,7 @@ def assign_lead(psid):
     new_assignee_id = request.form.get('assigned_user_id')
     action_ok = False
     
-    if current_user.role == 'admin':
+    if current_user.role in [SUPERADMIN_ROLE, 'admin']: # ✅ Admin/Superadmin can assign/unassign
         if new_assignee_id:
             db.leads.update_one({"psid": psid}, {"$set": {"assigned_to": ObjectId(new_assignee_id), "updated_at": now_dt()}})
         else:
@@ -491,7 +529,7 @@ def view_customer_detail(psid):
     lead = db.leads.find_one({"psid": psid})
     if not lead: return "Not Found", 404
     t_q = {"$or": [{"customer_psid": psid}, {"customer_name": lead.get("full_name")}]}
-    n_q = {"customer_psid": psid}
+    n_q = {"customer_psid": psid} # ✅ Notes are user-specific
     if current_user.role != 'admin':
         t_q = {"$and": [t_q, {"$or": [{"user_id": ObjectId(current_user.id)}, {"assigned_to": ObjectId(current_user.id)}]}]}
         n_q["user_id"] = ObjectId(current_user.id)
@@ -575,7 +613,7 @@ def add_customer_activity(psid):
 
     tid = 'act_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     todo_content = (request.form.get("todo_content") or "").strip()
-    status = request.form.get("status") or "Not_yet"
+    status = request.form.get("status") or "todo" # ✅ Default to unified status
     
     raw_deadline = request.form.get("deadline") or request.form.get("time_log")
     due_at = parse_due_at(raw_deadline) if (raw_deadline and "T" in raw_deadline) else None
@@ -584,7 +622,7 @@ def add_customer_activity(psid):
     assigned_to_oid = ObjectId(current_user.id)
     assignee_name = current_user.username
 
-    if current_user.role == "admin":
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: # ✅ Admin/Superadmin can assign
         assigned_user_id = request.form.get("assigned_user_id")
         if assigned_user_id:
             u = db.users.find_one({"_id": ObjectId(assigned_user_id)})
@@ -621,10 +659,139 @@ def add_customer_activity(psid):
 @app.route('/tasks')
 @login_required
 def view_tasks():
-    q = {} if current_user.role == 'admin' else {"$or": [{"user_id": ObjectId(current_user.id)}, {"assigned_to": ObjectId(current_user.id)}]}
-    if request.args.get('search'): q["$or"] = [{"todo_content": {"$regex": request.args.get('search'), "$options": "i"}}, {"customer_name": {"$regex": request.args.get('search'), "$options": "i"}}]
-    if request.args.get('status'): q["status"] = request.args.get('status')
-    return render_template('tasks.html', tasks=list(db.tasks.find(q).sort("updated_at", -1)), users_list=list(db.users.find({}, {"username": 1, "_id": 1})) if current_user.role == 'admin' else [])
+    filter_type = request.args.get('type') # customer, corp, personal, department, request
+    filter_status = request.args.get('status')
+    search = request.args.get('search', '').lower()
+    filter_department = request.args.get('department') # For department tasks
+
+
+    all_items = []
+    me = ObjectId(current_user.id)
+
+    # 1. Customer Tasks
+    if not filter_type or filter_type == 'customer':
+        q = {}
+        # ✅ User can only see their own customer tasks
+        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
+            q["$or"] = [{"user_id": me}, {"assigned_to": me}]
+        if filter_status: q["status"] = filter_status
+        tasks = list(db.tasks.find(q))
+        for t in tasks:
+            if search and not (search in (t.get('todo_content') or '').lower() or search in (t.get('customer_name') or '').lower()): continue
+            t['kind'] = 'customer'
+            t['context_label'] = t.get('customer_name')
+            all_items.append(t)
+
+    # 2. Corp Tasks
+    if not filter_type or filter_type == 'corp':
+        q = {}
+        # ✅ User can only see their own corp tasks
+        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
+            q["assigned_to"] = {"$in": [me]}
+        if filter_status: q["status"] = filter_status
+        # ✅ FIX: Enable department filter for Corp Tasks
+        if filter_department: q["department"] = filter_department
+        ctasks = list(db.corp_tasks.find(q))
+        for t in ctasks:
+            if search and not (search in (t.get('title') or '').lower() or search in (t.get('department') or '').lower()): continue
+            t['kind'] = 'corp'
+            t['todo_content'] = t.get('title')
+            t['context_label'] = t.get('department')
+            if 'assignees' not in t: t['assignees'] = [t.get('assignee')] if t.get('assignee') else []
+            t['assignee'] = t['assignees'][0] if t['assignees'] else '---'
+            all_items.append(t)
+
+    # 3. Personal Tasks
+    if not filter_type or filter_type == 'personal':
+         q = {}
+         if current_user.role not in [SUPERADMIN_ROLE, 'admin']: q["user_id"] = me # ✅ Personal tasks are always user-specific
+         if filter_status: q["status"] = filter_status
+         ptasks = list(db.personal_tasks.find(q))
+         for t in ptasks:
+            if search and not (search in (t.get('title') or '').lower()): continue
+            t['kind'] = 'personal'
+            t['todo_content'] = t.get('title')
+            t['context_label'] = 'Personal'
+            t['assignee'] = 'Me'
+            all_items.append(t)
+
+    # ✅ NEW: 4. Department Tasks
+    if not filter_type or filter_type == 'department':
+        q = {}
+        # ✅ Department tasks are filtered by user's department or assigned_to
+        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
+            q["$or"] = [
+                {"assigned_to": {"$in": [me]}},
+                {"department": current_user.department}
+            ]
+        if filter_department: q["department"] = filter_department
+        if filter_status: q["status"] = filter_status
+        dtasks = list(db.department_tasks.find(q))
+        for t in dtasks:
+            if search and not (search in (t.get('title') or '').lower() or search in (t.get('department') or '').lower()): continue
+            t['kind'] = 'department'
+            t['todo_content'] = t.get('title')
+            t['customer_name'] = None # No customer for department tasks
+            t['department'] = t.get('department')
+            if 'assignees' not in t: t['assignees'] = [t.get('assignee')] if t.get('assignee') else []
+            t['assignee'] = t['assignees'][0] if t['assignees'] else '---'
+            all_items.append(t)
+
+
+    # 4. Customer Requests (Merged)
+    if not filter_type or filter_type == 'request':
+        q = {}
+        if search:
+             q["$or"] = [
+                {"content": {"$regex": search, "$options": "i"}},
+                {"customer_name": {"$regex": search, "$options": "i"}}
+            ]
+        if filter_status: q["status"] = filter_status
+        # ✅ User can only see requests they sent or are assigned to (if requests had assignees)
+        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
+            q["sender_name"] = current_user.username # Assuming sender_name is current_user.username
+        reqs = list(db.customer_requests.find(q))
+        for r in reqs:
+            r['kind'] = 'request'
+            r['todo_content'] = r.get('content')
+            r['context_label'] = r.get('customer_name')
+            r['assignee'] = r.get('sender_name')
+            r['due_at'] = None
+            
+            # ✅ Migration Logic for Display: Old Status -> Note
+            if r.get('status') in REQUEST_STATUSES:
+                r['note'] = r.get('status')
+                r['status'] = 'todo' # Default unified status
+            else:
+                r['note'] = r.get('note', '')
+
+            all_items.append(r)
+
+    # Sort Logic
+    def get_is_mine(t):
+        if t.get('kind') == 'personal': return True
+        assigned = t.get('assigned_to')
+        if not assigned: return False
+        if isinstance(assigned, list): return me in assigned
+        return assigned == me
+
+    all_items.sort(key=lambda x: x.get('updated_at') or datetime.min, reverse=True)
+    all_items.sort(key=lambda x: not get_is_mine(x))
+    all_items.sort(key=lambda x: x.get('status') in ['done', 'cancelled'])
+    all_items.sort(key=lambda x: x.get('status') == 'overdue', reverse=True) # Overdue first
+    
+    # ✅ FIX: Include Department in users_list for frontend validation
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
+
+    return render_template(
+        'tasks.html', 
+        tasks=all_items, 
+        users_list=users_list, 
+        statuses=UNIFIED_STATUSES, 
+        corp_departments=CORP_DEPARTMENTS, # For corp task modal
+        department_task_departments=DEPARTMENT_TASK_DEPARTMENTS, # For department task modal
+        request_statuses=REQUEST_STATUSES,
+        business_types=BUSINESS_TYPES)
 
 @app.route('/task/add', methods=['POST'])
 @login_required
@@ -635,18 +802,20 @@ def add_task():
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
     customer_psid, norm_name = link_customer_for_task(request.form.get('customer_name'))
     
-    assigned_to_oid = ObjectId(aid)
+    assigned_to_oid = ObjectId(aid) # ✅ Assigned to user selected in modal
     is_assigned = assigned_to_oid != ObjectId(current_user.id)
     
     db.tasks.insert_one({
         "id": 'task_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8)),
         "todo_content": request.form.get('todo_content'), "customer_name": norm_name or request.form.get('customer_name'),
         "customer_psid": customer_psid, "assignee": target['username'] if target else '---', "assigned_to": assigned_to_oid,
-        "status": "Not_yet", "due_at": due_at, "deadline": due_at, "user_id": ObjectId(current_user.id),
+        "status": "todo", "due_at": due_at, "deadline": due_at, "user_id": ObjectId(current_user.id),
         "created_at": now_dt(), "updated_at": now_dt(), "notify_pending": is_assigned,
         "assigned_by": current_user.username, "assigned_by_role": current_user.role,
         "assigned_at": now_dt() if is_assigned else None, "missed_notify_pending": False,
         "attachment": save_uploaded_file(request.files.get('attachment'))
+        # ✅ Add note field
+        , "note": request.form.get('note', '')
     })
     
     # ✅ AUTO SEND TELEGRAM (Notify Assignee)
@@ -700,15 +869,19 @@ def update_task_detail(id):
     if not task:
         if request.is_json: return jsonify({"status": "error", "message": "Task not found"}), 404
         return redirect(url_for('view_tasks'))
-    
+
     if request.is_json:
         data = request.get_json()
         upd = {"updated_at": now_dt()}
+        # ✅ Generic content update based on task kind
         if col_name == 'tasks':
             upd.update({"todo_content": data.get('todo_content'), "customer_name": data.get('customer_name')})
         elif col_name in ['corp_tasks', 'personal_tasks']:
             upd["title"] = data.get('todo_content')
         if 'due_at' in data: upd['due_at'] = parse_due_at(data['due_at'])
+        
+        if 'note' in data: upd['note'] = data['note'] # ✅ Update note field
+
         db[col_name].update_one({"id": id}, {"$set": upd})
         return jsonify({"status": "success"})
 
@@ -716,7 +889,8 @@ def update_task_detail(id):
     
     if col_name == 'tasks':
         upd.update({"todo_content": request.form.get('todo_content'), "customer_name": request.form.get('customer_name')})
-        if current_user.role == 'admin' and request.form.get('assigned_user_id'):
+        # ✅ FIX: SUPERADMIN CAN REASSIGN TOO
+        if current_user.role in [SUPERADMIN_ROLE, 'admin'] and request.form.get('assigned_user_id'):
             u = db.users.find_one({"_id": ObjectId(request.form.get('assigned_user_id'))})
             if u: upd.update({"assigned_to": u["_id"], "assignee": u["username"]})
     elif col_name in ['corp_tasks', 'personal_tasks']:
@@ -730,18 +904,45 @@ def update_task_detail(id):
     if 'detail' in request.form.get('source_page', ''): return redirect(url_for('view_task_detail_page', id=id))
     return redirect(url_for('view_tasks' if col_name == 'tasks' else ('view_corp_tasks' if col_name == 'corp_tasks' else 'view_personal_tasks')))
 
+# ✅ Unified quick update for all task types
 @app.route('/task/quick-update/<id>', methods=['POST'])
 @login_required
 def quick_update_task(id):
-    t = db.tasks.find_one({"id": id})
-    if not t or not can_user_quick_update(t): return jsonify({"status": "error"}), 403
-    nst = allowed_next_status(t)
-    upd = {"status": nst, "updated_at": now_dt()}
-    if nst == "Missed": upd.update({"missed_at": now_dt(), "missed_notify_pending": True})
-    db.tasks.update_one({"id": id}, {"$set": upd})
+    t, col = find_any_task(id)
+    if not t: return jsonify({"status": "error"}), 404
     
-    # ✅ SEND TELEGRAM NOTIFICATION TO CREATOR
-    send_status_change_notification(t, nst, "Customer Task")
+    # ✅ Permission Check for quick update
+    has_perm = False
+    if current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
+    elif col == 'personal_tasks' and t.get('user_id') == ObjectId(current_user.id): has_perm = True
+    elif col == 'tasks' and (t.get('user_id') == ObjectId(current_user.id) or t.get('assigned_to') == ObjectId(current_user.id)): has_perm = True
+    elif col == 'corp_tasks':
+         assigned = t.get("assigned_to", [])
+         if isinstance(assigned, ObjectId) and assigned == ObjectId(current_user.id): has_perm = True
+         elif isinstance(assigned, list) and ObjectId(current_user.id) in assigned: has_perm = True
+    elif col == 'department_tasks': # ✅ NEW: Department task permission
+         if isinstance(assigned, ObjectId) and assigned == ObjectId(current_user.id): has_perm = True
+         elif isinstance(assigned, list) and ObjectId(current_user.id) in assigned: has_perm = True
+    elif col == 'customer_requests': has_perm = True # Allow all to update requests for now
+    
+    if not has_perm: return jsonify({"status": "error", "message": "Forbidden"}), 403
+
+    req_status = request.form.get('status')
+    nst = req_status if req_status else get_next_status(t.get('status', 'todo'))
+    
+    upd = {"status": nst, "updated_at": now_dt()}
+    
+    # ✅ Preserve Old Status as Note if transitioning from Request Status
+    if col == 'customer_requests':
+        current_s = t.get('status')
+        if current_s in REQUEST_STATUSES and not t.get('note'):
+            upd['note'] = current_s
+
+    # Special logic for requests if needed (no overdue logic usually)
+    if nst == "overdue": upd.update({"missed_at": now_dt(), "missed_notify_pending": True})
+    
+    db[col].update_one({"id": id}, {"$set": upd})
+    send_status_change_notification(t, nst, "Task")
     
     return jsonify({"status": "success", "next": nst})
 
@@ -751,8 +952,15 @@ def view_task_detail_page(id):
     task, col_name = find_any_task(id)
     if not task: return redirect(url_for('view_tasks'))
     
+    # ✅ Redirect to Request Detail if it's a request (uses request_detail.html)
+    if col_name == 'customer_requests':
+        return render_template('request_detail.html', req=task, request_statuses=REQUEST_STATUSES, business_types=BUSINESS_TYPES, statuses=UNIFIED_STATUSES)
+
     task['is_normal_task'] = (col_name == 'tasks')
     if col_name == 'corp_tasks':
+        task.update({'todo_content': task.get('title'), 'customer_name': task.get('department','Corp'), 'assignee': ", ".join(task.get('assignees', [])) or "---"})
+    elif col_name == 'department_tasks': # ✅ NEW: Department task detail mapping
+        task['is_department_task'] = True
         task.update({'todo_content': task.get('title'), 'customer_name': task.get('department','Corp'), 'assignee': ", ".join(task.get('assignees', [])) or "---"})
     elif col_name == 'personal_tasks':
         task.update({'todo_content': task.get('title'), 'customer_name': "Personal Task", 'assignee': "Me"})
@@ -760,16 +968,20 @@ def view_task_detail_page(id):
     # Permission Check
     me = ObjectId(current_user.id)
     has_perm = False
-    if current_user.role == 'admin': has_perm = True
+    if current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
     elif col_name == 'tasks' and (task.get('user_id') == me or task.get('assigned_to') == me): has_perm = True
     elif col_name == 'personal_tasks' and task.get('user_id') == me: has_perm = True
     elif col_name == 'corp_tasks':
         assigned = task.get('assigned_to', [])
         if isinstance(assigned, list) and me in assigned: has_perm = True
         elif assigned == me: has_perm = True
+    elif col_name == 'department_tasks': # ✅ NEW: Department task detail permission
+        assigned = task.get('assigned_to', [])
+        if isinstance(assigned, list) and me in assigned: has_perm = True
+        elif assigned == me: has_perm = True
             
     if not has_perm: return redirect(url_for('view_tasks'))
-    return render_template('task_detail.html', task=task)
+    return render_template('task_detail.html', task=task, statuses=UNIFIED_STATUSES)
 
 @app.route('/task/detail/upload/<id>', methods=['POST'])
 @login_required
@@ -783,26 +995,61 @@ def upload_task_file_detail(id):
 @app.route('/task/delete/<id>', methods=['POST'])
 @login_required
 def delete_task(id):
-    t = db.tasks.find_one({"id": id})
-    if not t:
-        return redirect(url_for('view_tasks'))
+    t, col = find_any_task(id)
+    if not t: return redirect(url_for('view_tasks'))
 
-    if current_user.role == "admin":
-        db.tasks.delete_one({"id": id})
-        return redirect(request.referrer or url_for('view_tasks'))
+    # Generic Delete Logic
+    can_delete = False
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: 
+        can_delete = True
+    elif col == 'personal_tasks': 
+        can_delete = True
+    elif col == 'tasks':
+        # Normal task: creator can delete unless assigned by admin
+        if t.get("user_id") == ObjectId(current_user.id) and t.get("assigned_by_role") != "admin":
+            can_delete = True
+    elif col == 'customer_requests':
+        # Only admin deletes requests usually, or maybe creator? Let's stick to admin for now based on requests_customer.html
+        pass 
 
-    # user rule:
-    # - allow delete only if user is creator
-    # - but forbid if task was assigned by admin
-    me = ObjectId(current_user.id)
-    if t.get("user_id") != me:
-        return redirect(request.referrer or url_for('view_tasks'))
+    if can_delete:
+        db[col].delete_one({"id": id})
+    else:
+        flash("Bạn không có quyền xoá task này.", "danger")
 
-    if t.get("assigned_by_role") == "admin":
-        flash("Bạn không thể xoá task do admin phân bổ.", "danger")
-        return redirect(request.referrer or url_for('view_tasks'))
+    return redirect(request.referrer or url_for('view_tasks'))
 
-    db.tasks.delete_one({"id": id})
+# ✅ NEW: Route for Generic Request Delete (Popup -> Telegram)
+@app.route('/task/request-delete-generic/<id>', methods=['POST'])
+@login_required
+def request_task_delete_generic(id):
+    t, col = find_any_task(id)
+    if not t: return jsonify({"status": "not_found"}), 404
+    
+    reason = request.form.get('reason', 'No reason provided')
+    
+    # Find Admin/Superadmin to notify
+    admins = list(db.users.find({"role": {"$in": [SUPERADMIN_ROLE, 'admin']}}))
+    
+    msg_text = (
+        f"🚨 <b>DELETE REQUEST</b>\n\n"
+        f"👤 <b>User:</b> {current_user.username}\n"
+        f"📝 <b>Task:</b> {t.get('todo_content') or t.get('title')}\n"
+        f"📂 <b>Type:</b> {col}\n"
+        f"❓ <b>Reason:</b> {reason}\n"
+    )
+    
+    count = 0
+    for a in admins:
+        if a.get("telegram_chat_id"):
+            send_telegram_notification(a.get("telegram_chat_id"), msg_text)
+            count += 1
+            
+    if count > 0:
+        flash("Đã gửi yêu cầu xóa tới Admin.", "success")
+    else:
+        flash("Không tìm thấy Admin để gửi yêu cầu. Vui lòng liên hệ trực tiếp.", "warning")
+        
     return redirect(request.referrer or url_for('view_tasks'))
 
 # ---------------------------
@@ -811,29 +1058,26 @@ def delete_task(id):
 @app.route('/personal-tasks')
 @login_required
 def view_personal_tasks():
-    q = {"user_id": ObjectId(current_user.id)}
-    if request.args.get('status'): q["status"] = request.args.get('status')
-    if request.args.get('search'): q["title"] = {"$regex": request.args.get('search'), "$options": "i"}
-    return render_template("personal_tasks.html", tasks=list(db.personal_tasks.find(q).sort("updated_at", -1)))
+    return redirect(url_for('view_tasks', type='personal'))
 
 @app.route('/personal-task/add', methods=['POST'])
 @login_required
 def add_personal_task():
     title = (request.form.get("title") or "").strip()
-    if not title: return redirect(url_for("view_personal_tasks"))
-    db.personal_tasks.insert_one({
+    if not title: return redirect(url_for("view_tasks"))
+    db.personal_tasks.insert_one({ # ✅ Add note field
         "id": 'ptask_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8)),
-        "title": title, "description": request.form.get("description"), "status": "Not_yet",
+        "title": title, "description": request.form.get("description"), "status": "todo",
         "due_at": parse_due_at(request.form.get("due_at")), "user_id": ObjectId(current_user.id),
         "created_at": now_dt(), "updated_at": now_dt(), "notify_pending": False, "missed_notify_pending": False,
         "attachment": save_uploaded_file(request.files.get('attachment'))
     })
-    return redirect(url_for("view_personal_tasks"))
+    return redirect(url_for("view_tasks"))
 
 @app.route('/personal-task/quick-update/<id>', methods=['POST'])
 @login_required
 def quick_update_personal_task(id):
-    t = db.personal_tasks.find_one({"id": id, "user_id": ObjectId(current_user.id)})
+    t = db.personal_tasks.find_one({"id": id, "user_id": ObjectId(current_user.id)}) # ✅ Only creator can update
     if not t: return jsonify({"status": "not_found"}), 404
     nst = next_personal_status(t.get("status", "Not_yet"))
     upd = {"status": nst, "updated_at": now_dt()}
@@ -851,78 +1095,32 @@ def delete_personal_task(id):
     return redirect(url_for("view_personal_tasks"))
 
 
-
 # ---------------------------
 # ✅ Task Tổng công ty
 # ---------------------------
 @app.route('/corp-tasks')
-@login_required
+@login_required # ✅ Redirect to unified view
 def view_corp_tasks():
-    dept = request.args.get('dept', '').strip()
-    search = request.args.get('search', '').strip()
-    status = request.args.get('status', '').strip()
-
-    q = {}
-    if current_user.role != 'admin':
-        q["assigned_to"] = {"$in": [ObjectId(current_user.id)]}
-
-    if dept:
-        q["department"] = dept
-    if status:
-        q["status"] = status
-    if search:
-        q["$or"] = [
-            {"title": {"$regex": search, "$options": "i"}},
-            {"assignees": {"$regex": search, "$options": "i"}},
-            {"department": {"$regex": search, "$options": "i"}}
-        ]
-
-    corp_tasks = list(db.corp_tasks.find(q).sort("updated_at", -1))
-
-    # ===== NORMALIZE TASK DATA (UI) =====
-    for t in corp_tasks:
-        if isinstance(t.get("assigned_to"), ObjectId):
-            t["assigned_to"] = [t["assigned_to"]]
-
-        if "assignees" not in t:
-            t["assignees"] = [t["assignee"]] if t.get("assignee") else []
-
-    users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
-
-    # ===== SERIALIZE FOR CHART (NO ObjectId) =====
-    corp_tasks_chart = []
-    for t in corp_tasks:
-        corp_tasks_chart.append({
-            "id": t.get("id"),
-            "title": t.get("title"),
-            "department": t.get("department"),
-            "status": t.get("status"),
-        })
-
-    return render_template(
-        'corp_tasks.html',
-        corp_tasks=corp_tasks,                
-        corp_tasks_chart=corp_tasks_chart,     
-        corp_departments=CORP_DEPARTMENTS,
-        corp_statuses=CORP_STATUSES,
-        corp_status_labels=CORP_STATUS_LABELS,
-        users_list=users_list
-    )
+    return redirect(url_for('view_tasks', type='corp'))
 
 
 @app.route('/corp-task/add', methods=['POST'])
 @login_required
 def add_corp_task():
+    # ✅ FIX: Allow all roles to create Corp Tasks
+    # Không còn chặn User/Admin nữa
+
     # Tạo ID ngẫu nhiên cho task
     cid = 'corp_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
     
     # LẤY DANH SÁCH NGƯỜI ĐƯỢC GÁN (Mở cho tất cả các Role)
-    assigned_user_ids = request.form.getlist('assigned_user_ids')
+    assigned_user_ids = request.form.getlist('assigned_user_ids') # ✅ Can be empty
     
-    # Nếu là User thường mà không chọn ai, thì mặc định tự gán cho mình
+    # ✅ NEW: Default assignment logic if none selected
     if not assigned_user_ids:
+        # If user didn't select anyone, default to themselves
         assigned_user_ids = [str(current_user.id)]
 
     # Parse thời hạn
@@ -931,18 +1129,18 @@ def add_corp_task():
     # Kiểm tra dữ liệu đầu vào
     if not title or department not in CORP_DEPARTMENTS or not due_at:
         flash('Thiếu thông tin hoặc phòng ban không hợp lệ', 'danger')
-        return redirect(url_for('view_corp_tasks'))
+        return redirect(url_for('view_tasks'))
 
     # Xử lý OID và lấy tên hiển thị
     try:
-        # Chuyển string ID thành ObjectId, bọc trong try-except để tránh crash nếu ID lỗi
+        # Chuyển string ID thành ObjectId, bọc trong try-except để tránh crash nếu ID lỗi. If empty, it will be empty list.
         user_oids = [ObjectId(uid) for uid in assigned_user_ids]
         users = list(db.users.find({"_id": {"$in": user_oids}}))
         
         assignees = [u.get("username", "user") for u in users]
     except Exception as e:
         flash('Lỗi định dạng người dùng', 'danger')
-        return redirect(url_for('view_corp_tasks'))
+        return redirect(url_for('view_tasks'))
     
     # Handle file upload
     attachment_filename = None
@@ -956,8 +1154,8 @@ def add_corp_task():
         "department": department,
         "assigned_to": [u["_id"] for u in users], # Lưu mảng OID
         "assignees": assignees,                   # Lưu mảng tên để hiển thị nhanh
-        "assignee": assignees[0] if assignees else '---',
-        "status": "Unreceived",
+        "assignee": assignees[0] if assignees else '---', # Primary assignee for display
+        "status": "todo",
         "due_at": due_at,
         "created_at": now_dt(),
         "updated_at": now_dt(),
@@ -965,7 +1163,8 @@ def add_corp_task():
         "assigned_by_role": current_user.role,
         "assigned_at": now_dt(),
         "notify_pending": True,
-        "admin_request": None,
+        "admin_request": None, # For admin approval flow
+        "note": request.form.get('note', ''), # ✅ Add note field
         "attachment": attachment_filename
     })
 
@@ -977,13 +1176,13 @@ def add_corp_task():
         f"👤 <b>By:</b> {current_user.username}\n"
         f"📅 <b>Deadline:</b> {due_at.strftime('%H:%M %d/%m/%Y')}"
     )
-    for u in users:
+    for u in users: # Notify all assignees
         chat_id = u.get("telegram_chat_id")
         if chat_id:
             send_telegram_notification(chat_id, msg_text)
 
     flash('Đã tạo task công ty thành công', 'success')
-    return redirect(url_for('view_corp_tasks'))
+    return redirect(url_for('view_tasks'))
 
 # ✅ MANUAL SEND TELEGRAM (Corp)
 @app.route('/corp-task/send-telegram/<id>', methods=['POST'])
@@ -1011,7 +1210,7 @@ def corp_manual_send_telegram(id):
     
     if count > 0: flash(f"Đã gửi thông báo đến {count} người.", "success")
     else: flash("Không tìm thấy Telegram ID của người nhận.", "warning")
-    return redirect(url_for('view_corp_tasks'))
+    return redirect(url_for('view_tasks'))
 
 @app.route('/corp-task/request-action/<id>', methods=['POST'])
 @login_required
@@ -1032,22 +1231,28 @@ def request_corp_action(id):
         }}
     )
     flash(f"Đã gửi yêu cầu {action_type} tới Admin", "info")
-    return redirect(url_for('view_corp_tasks'))
+    return redirect(url_for('view_tasks'))
 
 @app.route('/corp-task/update/<id>', methods=['POST'])
 @login_required
 def update_corp_task(id):
-    t = db.corp_tasks.find_one({"id": id})
+    t = db.corp_tasks.find_one({"id": id}) # ✅ Find task
     if not t or not can_edit_corp_task(t):
         flash("Bạn không có quyền chỉnh sửa task này", "danger")
-        return redirect(url_for('view_corp_tasks'))
+        return redirect(url_for('view_tasks'))
 
     title = (request.form.get('title') or '').strip()
     department = request.form.get('department')
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
-    # ✅ FIXED: Correct variable naming (assigned_user_ids instead of uids)
-    if current_user.role == 'admin':
+    # ✅ NEW: Assignment logic based on role for updates
+    assigned_to_oids = t.get("assigned_to", [])
+    assignees = t.get("assignees", [])
+
+    if current_user.role == SUPERADMIN_ROLE:
+        # Superadmin can change assignees
+        assigned_user_ids = request.form.getlist('assigned_user_ids')
+        # If no assignees selected, clear them
         assigned_user_ids = request.form.getlist('assigned_user_ids')
         try:
             users = list(db.users.find({"_id": {"$in": [ObjectId(u) for u in assigned_user_ids]}}))
@@ -1056,9 +1261,12 @@ def update_corp_task(id):
         except:
             assigned_to_oids = []
             assignees = []
-    else:
-        assigned_to_oids = t.get("assigned_to")
-        assignees = t.get("assignees")
+    elif current_user.role == 'admin':
+        # Admin cannot change assignees for corp tasks, only view
+        pass
+    else: # Regular user
+        # Regular user cannot change assignees for corp tasks, only view
+        pass
 
     upd = {
         "title": title,
@@ -1067,7 +1275,8 @@ def update_corp_task(id):
         "assignees": assignees,
         "due_at": due_at,
         "updated_at": now_dt(),
-        "admin_request": None # Xóa trạng thái pending nếu có sau khi sửa
+        "admin_request": None, # Xóa trạng thái pending nếu có sau khi sửa
+        "note": request.form.get('note', '') # ✅ Update note field
     }
 
     # Handle file upload
@@ -1080,7 +1289,7 @@ def update_corp_task(id):
 
     db.corp_tasks.update_one({"id": id}, {"$set": upd})
     flash("Cập nhật task thành công", "success")
-    return redirect(url_for('view_corp_tasks'))
+    return redirect(url_for('view_tasks'))
 
 @app.route('/corp-task/status/<id>', methods=['POST'])
 @login_required
@@ -1088,7 +1297,7 @@ def update_corp_status(id):
     t = db.corp_tasks.find_one({"id": id})
     if not t:
         return jsonify({"status": "not_found"}), 404
-    if not can_update_corp_status(t):
+    if not can_update_corp_status(t): # ✅ Check permission
         return jsonify({"status": "forbidden", "message": "No permission"}), 403
 
     payload = request.get_json(silent=True) or {}
@@ -1098,7 +1307,7 @@ def update_corp_status(id):
     if not ok:
         return jsonify({"status": "error", "message": msg}), 400
 
-    db.corp_tasks.update_one({"id": id}, {"$set": {"status": new_status, "updated_at": now_dt()}})
+    db.corp_tasks.update_one({"id": id}, {"$set": {"status": new_status, "updated_at": now_dt()}}) # ✅ Update status
     
     # ✅ SEND TELEGRAM NOTIFICATION TO CREATOR
     send_status_change_notification(t, new_status, "Corp Task")
@@ -1108,15 +1317,109 @@ def update_corp_status(id):
 @app.route('/corp-task/delete/<id>', methods=['POST'])
 @login_required
 def delete_corp_task(id):
-    if current_user.role == "admin": db.corp_tasks.delete_one({"id": id})
-    return redirect(url_for("view_corp_tasks"))
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: db.corp_tasks.delete_one({"id": id}) # ✅ Admin/Superadmin can delete
+    return redirect(url_for("view_tasks"))
 
 @app.route('/corp-task/request-delete/<id>', methods=['POST'])
 @login_required
 def request_corp_delete(id):
-    db.corp_tasks.update_one({"id": id}, {"$set": {"admin_request": "delete", "request_reason": request.form.get('reason'), "request_by": current_user.username, "updated_at": now_dt()}})
-    flash("Đã gửi yêu cầu xóa", "info")
-    return redirect(url_for('view_corp_tasks'))
+    # This is legacy route, redirected to generic now if needed, but kept for compatibility
+    return request_task_delete_generic(id)
+
+# ---------------------------
+# ✅ NEW: Department Tasks
+# ---------------------------
+@app.route('/department-task/add', methods=['POST'])
+@login_required
+def add_department_task():
+    did = 'dept_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    title = (request.form.get('title') or '').strip()
+    department = request.form.get('department')
+    assigned_user_ids = request.form.getlist('assigned_user_ids')
+
+    # ✅ Assignment logic for department tasks
+    if current_user.role == SUPERADMIN_ROLE:
+        # Superadmin can assign to anyone
+        pass
+    elif current_user.role in ['admin', 'user']:
+        # Admin AND User can only create for their own department
+        if department != current_user.department:
+            flash(f"Bạn chỉ có thể tạo task cho phòng ban của mình ({current_user.department}).", "danger")
+            return redirect(url_for('view_tasks'))
+        
+        # VALIDATE: All assignees must be in same department
+        if assigned_user_ids:
+            try:
+                user_oids = [ObjectId(uid) for uid in assigned_user_ids]
+                invalid_users = db.users.count_documents({"_id": {"$in": user_oids}, "department": {"$ne": current_user.department}})
+                if invalid_users > 0:
+                    flash("Bạn chỉ được giao task cho nhân viên trong phòng ban của mình.", "danger")
+                    return redirect(url_for('view_tasks'))
+            except: pass
+
+        # If no assignees selected, default to self
+        if not assigned_user_ids: assigned_user_ids = [str(current_user.id)]
+
+    due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
+
+    if not title or department not in DEPARTMENT_TASK_DEPARTMENTS or not due_at:
+        flash('Thiếu thông tin hoặc phòng ban không hợp lệ', 'danger')
+        return redirect(url_for('view_tasks'))
+
+    try:
+        user_oids = [ObjectId(uid) for uid in assigned_user_ids]
+        users = list(db.users.find({"_id": {"$in": user_oids}}))
+        assignees = [u.get("username", "user") for u in users]
+    except Exception as e:
+        flash('Lỗi định dạng người dùng', 'danger')
+        return redirect(url_for('view_tasks'))
+    
+    db.department_tasks.insert_one({
+        "id": did,
+        "title": title,
+        "department": department,
+        "assigned_to": [u["_id"] for u in users],
+        "assignees": assignees,
+        "assignee": assignees[0] if assignees else '---',
+        "status": "todo",
+        "due_at": due_at,
+        "created_at": now_dt(),
+        "updated_at": now_dt(),
+        "assigned_by": current_user.username,
+        "assigned_by_role": current_user.role,
+        "assigned_at": now_dt(),
+        "notify_pending": True,
+        "note": request.form.get('note', ''),
+        "attachment": save_uploaded_file(request.files.get('attachment'))
+    })
+
+    msg_text = (
+        f"🔔 <b>NEW DEPARTMENT TASK</b>\n\n"
+        f"📝 <b>Content:</b> {title}\n"
+        f"🏢 <b>Dept:</b> {department}\n"
+        f"👤 <b>By:</b> {current_user.username}\n"
+        f"📅 <b>Deadline:</b> {due_at.strftime('%H:%M %d/%m/%Y')}"
+    )
+    for u in users:
+        chat_id = u.get("telegram_chat_id")
+        if chat_id:
+            send_telegram_notification(chat_id, msg_text)
+
+    flash('Đã tạo task phòng ban thành công', 'success')
+    return redirect(url_for('view_tasks'))
+
+@app.route('/department-task/update/<id>', methods=['POST'])
+@login_required
+def update_department_task(id):
+    # This will be handled by the generic /task/update/<id> route
+    pass
+
+@app.route('/department-task/delete/<id>', methods=['POST'])
+@login_required
+def delete_department_task(id):
+    if current_user.role in [SUPERADMIN_ROLE, "admin"]: # ✅ Admin/Superadmin can delete
+        db.department_tasks.delete_one({"id": id})
+    return redirect(url_for("view_tasks"))
 
 # ---------------------------
 # ✅ ROUTES: REQUESTS CUSTOMER (NEW FEATURE)
@@ -1131,19 +1434,124 @@ def view_customer_requests():
             {"content": {"$regex": request.args.get('search'), "$options": "i"}},
             {"customer_name": {"$regex": request.args.get('search'), "$options": "i"}}
         ]
-    requests_list = list(db.customer_requests.find(q).sort("created_at", -1))
-    return render_template('requests_customer.html', requests=requests_list)
+    requests_list = list(db.customer_requests.find(q).sort("created_at", -1)) # ✅ Filtered by current user in view_tasks
+    
+    # ✅ Pass Constants to Template for Dropdowns
+    return render_template(
+        'requests_customer.html', 
+        requests=requests_list,
+        request_statuses=REQUEST_STATUSES,
+        business_types=BUSINESS_TYPES
+    )
+
+@app.route('/request/customer/add', methods=['POST'])
+@login_required
+def add_customer_request():
+    """Thêm yêu cầu khách hàng thủ công"""
+    content = (request.form.get("content") or "").strip()
+    customer_name = (request.form.get("customer_name") or "").strip()
+    
+    # ✅ Get Full Fields
+    note_val = request.form.get("note") or request.form.get("status") or "Request"
+    business_type_form = request.form.get("business_type")
+    
+    if not content:
+        flash("Nội dung không được để trống", "danger")
+        return redirect(url_for("view_customer_requests"))
+
+    customer_psid, norm_name = link_customer_for_task(customer_name)
+    
+    # ✅ Logic Business Type: Prefer Form > Auto-Detect > Default "New"
+    business_type = "New"
+    if business_type_form and business_type_form != "New":
+        business_type = business_type_form
+    elif customer_psid:
+        lead = db.leads.find_one({"psid": customer_psid})
+        if lead and lead.get('sector'):
+            s = lead.get('sector')
+            if s == 'Pod_Drop': business_type = "POD/Dropship"
+            elif s == 'Warehouse': business_type = "Warehouse"
+            elif s == 'Express': business_type = "Express"
+
+    rid = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    
+    db.customer_requests.insert_one({
+        "id": rid,
+        "content": content,
+        "customer_name": norm_name or customer_name,
+        "customer_psid": customer_psid,
+        "app": "Manual",
+        "status": "todo", # ✅ Default unified status
+        "note": note_val, # ✅ Store old status as Note
+        "business_type": business_type,
+        "created_at": now_dt(),
+        "assigned_by": current_user.username,
+        "sender_name": current_user.username
+    })
+    
+    flash("Đã tạo yêu cầu mới", "success")
+    return redirect(url_for("view_customer_requests"))
+
+@app.route('/request/customer/detail/<id>')
+@login_required
+def view_customer_request_detail(id):
+    """Xem chi tiết và chỉnh sửa Customer Request (giống Task Detail)"""
+    req = db.customer_requests.find_one({"id": id})
+    if not req:
+        flash("Request not found", "danger")
+        return redirect(url_for("view_customer_requests"))
+        
+    return render_template(
+        'request_detail.html', 
+        req=req,
+        request_statuses=REQUEST_STATUSES,
+        business_types=BUSINESS_TYPES,
+        statuses=UNIFIED_STATUSES
+    )
+
+@app.route('/request/customer/update/<id>', methods=['POST'])
+@login_required
+def update_customer_request(id):
+    """API update thông tin request (JSON)"""
+    req = db.customer_requests.find_one({"id": id})
+    if not req: return jsonify({"status": "not_found"}), 404
+    
+    data = request.get_json()
+    upd = {"updated_at": now_dt()}
+    
+    if 'content' in data: upd['content'] = data['content']
+    if 'customer_name' in data: 
+        # Nếu đổi tên khách hàng, thử link lại PSID
+        c_name = data['customer_name']
+        upd['customer_name'] = c_name
+        customer_psid, _ = link_customer_for_task(c_name)
+        if customer_psid: upd['customer_psid'] = customer_psid
+        
+    if 'status' in data:
+        if data['status'] in UNIFIED_STATUSES:
+            upd['status'] = data['status']
+
+    if 'note' in data:
+        upd['note'] = data['note']
+
+    if 'business_type' in data:
+        if data['business_type'] in BUSINESS_TYPES:
+            upd['business_type'] = data['business_type']
+
+    db.customer_requests.update_one({"id": id}, {"$set": upd})
+    return jsonify({"status": "success"})
 
 @app.route('/request/customer/delete/<id>', methods=['POST'])
 @login_required
 def delete_customer_request(id):
-    """Xóa yêu cầu (Chỉ Admin)"""
-    if current_user.role == 'admin':
+    """Xóa yêu cầu (Chỉ Admin/Superadmin)"""
+    # ✅ FIX: Allow Superadmin to delete
+    if current_user.role in [SUPERADMIN_ROLE, 'admin']:
         db.customer_requests.delete_one({"id": id})
     return redirect(url_for('view_customer_requests'))
 
 # ---------------------------
-# ✅ ROUTES: TOOLS (NEW PRICING)
+# ROUTES: TOOLS (NEW PRICING)
 # ---------------------------
 @app.route('/tools/pricing')
 @login_required
@@ -1238,6 +1646,17 @@ def add_external_task():
         sender_name = 'Unknown'
 
     customer_psid, norm_name = link_customer_for_task(raw_customer_name)
+    
+    # ✅ Auto-detect Business Type (Loại hình kinh doanh)
+    business_type = "New"
+    if customer_psid:
+        lead = db.leads.find_one({"psid": customer_psid})
+        if lead and lead.get('sector'):
+            s = lead.get('sector')
+            if s == 'Pod_Drop': business_type = "POD/Dropship"
+            elif s == 'Warehouse': business_type = "Warehouse"
+            elif s == 'Express': business_type = "Express"
+
     rid = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     
     db.customer_requests.insert_one({
@@ -1246,6 +1665,8 @@ def add_external_task():
         "customer_name": norm_name or raw_customer_name,
         "customer_psid": customer_psid,
         "app": source_app,
+        "status": "Request", # Default status
+        "business_type": business_type, # New field
         "created_at": now_dt(),
         "assigned_by": f"{sender_name} ({source_app})",
         "sender_name": sender_name
@@ -1262,17 +1683,23 @@ def add_external_task():
 @app.route('/admin/users')
 @login_required
 def admin_users():
-    if current_user.role != 'admin':
+    if current_user.role not in [SUPERADMIN_ROLE, 'admin']: # ✅ Only admin/superadmin can view
         return redirect(url_for('index'))
 
+    # ✅ FILTER: Admin only sees users in their own department
+    query = {}
+    if current_user.role == 'admin':
+        query["department"] = current_user.department
+
     users = []
-    for u in db.users.find():
+    for u in db.users.find(query):
         uo = User(u)
         uid = u["_id"]
         p1 = db.tasks.count_documents({"assigned_to": uid, "status": {"$ne": "Done"}})
-        p2 = db.personal_tasks.count_documents({"user_id": uid, "status": {"$ne": "Done"}})
+        p2 = db.personal_tasks.count_documents({"user_id": uid, "status": {"$ne": "done"}})
+        p4 = db.department_tasks.count_documents({"assigned_to": {"$in": [uid]}, "status": {"$ne": "done"}}) # ✅ NEW: Department task count
         p3 = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid]}, "status": {"$ne": "Done"}})
-        uo.pending_tasks = p1 + p2 + p3
+        uo.pending_tasks = p1 + p2 + p3 + p4 # ✅ Sum all task types
         users.append(uo)
 
     return render_template('user.html', users=users, departments=USER_DEPARTMENTS)
@@ -1280,13 +1707,19 @@ def admin_users():
 @app.route('/admin/user/add', methods=['POST'])
 @login_required
 def admin_add_user():
-    if current_user.role != 'admin':
+    # ✅ FIX: Allow Superadmin to add users
+    if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
         return redirect(url_for('index'))
         
     u = request.form.get('username')
     p = request.form.get('password')
     dept = request.form.get('department')
     
+    # ✅ VALIDATE: Admin can only add users to their department
+    if current_user.role == 'admin' and dept != current_user.department:
+        flash(f'Admin chỉ được tạo user trong phòng ban {current_user.department}', 'danger')
+        return redirect(url_for('admin_users'))
+
     if not u or not p:
         flash('Thiếu username hoặc password', 'danger')
         return redirect(url_for('admin_users'))
@@ -1295,7 +1728,7 @@ def admin_add_user():
         flash('Username đã tồn tại!', 'danger')
         return redirect(url_for('admin_users'))
         
-    db.users.insert_one({
+    db.users.insert_one({ # ✅ Default role is 'user'
         "username": u,
         "password_hash": generate_password_hash(p),
         "role": "user",
@@ -1308,12 +1741,17 @@ def admin_add_user():
 @app.route('/admin/user/detail/<user_id>')
 @login_required
 def admin_user_detail(user_id):
-    if current_user.role != 'admin':
+    if current_user.role not in [SUPERADMIN_ROLE, 'admin']: # ✅ Only admin/superadmin can view
         return redirect(url_for('index'))
 
     uid = ObjectId(user_id)
     u = db.users.find_one({"_id": uid})
     if not u:
+        return redirect(url_for('admin_users'))
+    
+    # ✅ VALIDATE: Admin can only see details of their dept users
+    if current_user.role == 'admin' and u.get('department') != current_user.department:
+        flash("Bạn không có quyền xem user này.", "danger")
         return redirect(url_for('admin_users'))
 
     task_q = {"assigned_to": uid}
@@ -1324,36 +1762,46 @@ def admin_user_detail(user_id):
     
     corp_q = {"assigned_to": {"$in": [uid]}}
     corp_tasks = list(db.corp_tasks.find(corp_q).sort("updated_at", -1))
+    
+    dept_q = {"$or": [{"assigned_to": {"$in": [uid]}}, {"department": u.get("department")}]} # ✅ NEW: Department tasks for user
+    department_tasks = list(db.department_tasks.find(dept_q).sort("updated_at", -1))
 
     # Calculate Breakdown Stats for Display & Chart
     stats_tasks = {
         "total": len(tasks),
-        "done": sum(1 for t in tasks if t.get('status') == 'Done'),
-        "not_yet": sum(1 for t in tasks if t.get('status') == 'Not_yet'),
-        "missed": sum(1 for t in tasks if t.get('status') == 'Missed')
+        "done": sum(1 for t in tasks if t.get('status') == 'done'),
+        "not_yet": sum(1 for t in tasks if t.get('status') not in ['done', 'cancelled']),
+        "overdue": sum(1 for t in tasks if t.get('status') == 'overdue')
     }
     
     stats_personal = {
         "total": len(personal_tasks),
-        "done": sum(1 for t in personal_tasks if t.get('status') == 'Done'),
-        "not_yet": sum(1 for t in personal_tasks if t.get('status') == 'Not_yet'),
-        "missed": sum(1 for t in personal_tasks if t.get('status') == 'Missed')
+        "done": sum(1 for t in personal_tasks if t.get('status') == 'done'),
+        "not_yet": sum(1 for t in personal_tasks if t.get('status') not in ['done', 'cancelled']),
+        "overdue": sum(1 for t in personal_tasks if t.get('status') == 'overdue')
     }
     
     stats_corp = {
         "total": len(corp_tasks),
-        "done": sum(1 for t in corp_tasks if t.get('status') == 'Done'),
-        "not_yet": sum(1 for t in corp_tasks if t.get('status') not in ['Done', 'Cancelled']),
-        "missed": 0
+        "done": sum(1 for t in corp_tasks if t.get('status') == 'done'),
+        "not_yet": sum(1 for t in corp_tasks if t.get('status') not in ['done', 'cancelled']),
+        "overdue": sum(1 for t in corp_tasks if t.get('status') == 'overdue')
+    }
+    # ✅ NEW: Department task stats
+    stats_department = {
+        "total": len(department_tasks),
+        "done": sum(1 for t in department_tasks if t.get('status') == 'done'),
+        "not_yet": sum(1 for t in department_tasks if t.get('status') not in ['done', 'cancelled']),
+        "overdue": sum(1 for t in department_tasks if t.get('status') == 'overdue')
     }
 
     # Consolidated Chart Data
     chart_data = {
-        "breakdown": [stats_tasks['total'], stats_corp['total'], stats_personal['total']],
+        "breakdown": [stats_tasks['total'], stats_corp['total'], stats_personal['total'], stats_department['total']], # ✅ Add department to breakdown
         "status": [
-            stats_tasks['done'] + stats_personal['done'] + stats_corp['done'],
-            stats_tasks['not_yet'] + stats_personal['not_yet'] + stats_corp['not_yet'],
-            stats_tasks['missed'] + stats_personal['missed'] + stats_corp['missed']
+            stats_tasks['done'] + stats_personal['done'] + stats_corp['done'] + stats_department['done'],
+            (stats_tasks['not_yet'] + stats_personal['not_yet'] + stats_corp['not_yet'] + stats_department['not_yet']),
+            (stats_tasks['overdue'] + stats_personal['overdue'] + stats_corp['overdue'] + stats_department['overdue'])
         ]
     }
 
@@ -1361,11 +1809,12 @@ def admin_user_detail(user_id):
         "total": stats_tasks["total"] + stats_personal["total"] + stats_corp["total"],
         "done": stats_tasks["done"] + stats_personal["done"] + stats_corp["done"],
         "not_yet": stats_tasks["not_yet"] + stats_personal["not_yet"] + stats_corp["not_yet"],
-        "missed": stats_tasks["missed"] + stats_personal["missed"],
+        "overdue": stats_tasks["overdue"] + stats_personal["overdue"] + stats_corp["overdue"] + stats_department["overdue"],
     }
 
     task_breakdown = {
         "customer": stats_tasks,
+        "department": stats_department, # ✅ NEW: Department task breakdown
         "personal": stats_personal,
         "corp": stats_corp
     }
@@ -1375,6 +1824,7 @@ def admin_user_detail(user_id):
         staff=u,
         stats=stats,
         tasks=tasks,
+        department_tasks=department_tasks, # ✅ Pass department tasks
         personal_tasks=personal_tasks,
         corp_tasks=corp_tasks,
         task_breakdown=task_breakdown,
@@ -1386,7 +1836,7 @@ def admin_user_detail(user_id):
 @app.route('/admin/user/update_role/<user_id>', methods=['POST'])
 @login_required
 def update_user_role(user_id):
-    if current_user.role != 'admin':
+    if current_user.role != SUPERADMIN_ROLE: # ✅ Only superadmin can change roles
         return redirect(url_for('index'))
 
     # prevent self role change if needed (optional)
@@ -1399,8 +1849,10 @@ def update_user_role(user_id):
 @app.route('/admin/user/update_department/<user_id>', methods=['POST'])
 @login_required
 def update_user_department(user_id):
-    if current_user.role != 'admin':
-        return redirect(url_for('index'))
+    # ✅ RESTRICT: ONLY SUPERADMIN CAN UPDATE DEPARTMENT
+    if current_user.role != SUPERADMIN_ROLE: 
+        flash("Chỉ Superadmin mới có quyền đổi phòng ban.", "danger")
+        return redirect(url_for('admin_users'))
 
     target_user = db.users.find_one({"_id": ObjectId(user_id)})
     if not target_user:
@@ -1421,7 +1873,7 @@ def update_user_department(user_id):
 @app.route('/admin/user/update-telegram/<user_id>', methods=['POST'])
 @login_required
 def admin_update_user_telegram(user_id):
-    if current_user.role != 'admin': return redirect(url_for('index'))
+    if current_user.role not in [SUPERADMIN_ROLE, 'admin']: return redirect(url_for('index')) # ✅ Only admin/superadmin
     tid = (request.form.get('telegram_id') or '').strip()
     db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"telegram_chat_id": tid}})
     flash("Cập nhật Telegram ID thành công", "success")
@@ -1430,7 +1882,7 @@ def admin_update_user_telegram(user_id):
 @app.route('/admin/user/delete/<user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
-    if current_user.role != 'admin':
+    if current_user.role not in [SUPERADMIN_ROLE, 'admin']: # ✅ Only admin/superadmin
         return redirect(url_for('index'))
 
     if ObjectId(user_id) != ObjectId(current_user.id):
@@ -1444,9 +1896,10 @@ def delete_user(user_id):
 @login_required
 def api_notifications():
     me = ObjectId(current_user.id)
-    t1 = list(db.tasks.find({"assigned_to": me, "notify_pending": True, "status": {"$ne": "Done"}}).sort("assigned_at", -1).limit(10))
-    t2 = list(db.corp_tasks.find({"assigned_to": me, "notify_pending": True, "status": {"$ne": "Done"}}).sort("assigned_at", -1).limit(10))
-    t3 = list(db.personal_tasks.find({"user_id": me, "notify_pending": True, "status": {"$ne": "Done"}}).sort("created_at", -1).limit(5))
+    t1 = list(db.tasks.find({"assigned_to": me, "notify_pending": True, "status": {"$ne": "done"}}).sort("assigned_at", -1).limit(10))
+    t2 = list(db.corp_tasks.find({"assigned_to": me, "notify_pending": True, "status": {"$ne": "done"}}).sort("assigned_at", -1).limit(10))
+    t3 = list(db.personal_tasks.find({"user_id": me, "notify_pending": True, "status": {"$ne": "done"}}).sort("created_at", -1).limit(5))
+    t4 = list(db.department_tasks.find({"assigned_to": me, "notify_pending": True, "status": {"$ne": "done"}}).sort("assigned_at", -1).limit(5)) # ✅ NEW: Department task notifications
     
     res = []
     for x in t1: res.append({"id": x.get("id"), "kind": "task", "todo_content": x.get("todo_content"), "customer_name": x.get("customer_name"), "assigned_by": x.get("assigned_by"), "assigned_at": x.get("assigned_at").strftime("%d/%m %H:%M") if x.get("assigned_at") else "", "due_at": x.get("due_at").strftime("%d/%m %H:%M") if x.get("due_at") else ""})
@@ -1464,27 +1917,30 @@ def api_notifications_ack():
     now = now_dt()
     db.tasks.update_many({"id": {"$in": ids}, "assigned_to": me}, {"$set": {"notify_pending": False, "notified_at": now}})
     db.corp_tasks.update_many({"id": {"$in": ids}, "assigned_to": me}, {"$set": {"notify_pending": False, "notified_at": now}})
-    db.personal_tasks.update_many({"id": {"$in": ids}, "user_id": me}, {"$set": {"notify_pending": False}})
+    db.personal_tasks.update_many({"id": {"$in": ids}, "user_id": me}, {"$set": {"notify_pending": False}}) # ✅ Acknowledge personal tasks
+    db.department_tasks.update_many({"id": {"$in": ids}, "assigned_to": me}, {"$set": {"notify_pending": False, "notified_at": now}}) # ✅ Acknowledge department tasks
     return jsonify({"status": "success"})
 
 @app.route('/api/admin/missed')
 @login_required
 def api_admin_missed():
-    if current_user.role != "admin": return jsonify({"items": []})
+    if current_user.role not in [SUPERADMIN_ROLE, "admin"]: return jsonify({"items": []}) # ✅ Admin/Superadmin can view
     items = list(db.tasks.find({"status": "Missed", "missed_notify_pending": True}).sort("missed_at", -1).limit(20))
     return jsonify({"items": [{"id": x.get("id"), "todo_content": x.get("todo_content"), "assignee": x.get("assignee"), "due_at": x.get("due_at").strftime("%d/%m %H:%M") if x.get("due_at") else ""} for x in items]})
 
 @app.route('/api/admin/missed/ack', methods=['POST'])
 @login_required
 def api_admin_missed_ack():
-    if current_user.role != "admin": return jsonify({"status": "forbidden"})
+    # ✅ FIX: SUPERADMIN CAN ACK
+    if current_user.role not in [SUPERADMIN_ROLE, "admin"]: return jsonify({"status": "forbidden"})
     db.tasks.update_many({"id": {"$in": request.get_json().get("ids", [])}}, {"$set": {"missed_notify_pending": False, "missed_notified_at": now_dt()}})
     return jsonify({"status": "success"})
 
 @app.route('/api/admin/corp-requests')
 @login_required
-def api_admin_corp_requests():
-    if current_user.role != "admin": return jsonify({"items": []})
+def api_admin_corp_requests(): # ✅ Admin/Superadmin can view
+    # ✅ FIX: SUPERADMIN CAN VIEW REQUESTS
+    if current_user.role not in [SUPERADMIN_ROLE, "admin"]: return jsonify({"items": []})
     reqs = list(db.corp_tasks.find({"admin_request": {"$ne": None}}))
     return jsonify({"items": [{"id": r.get("id"), "title": r.get("title"), "request_type": r.get("admin_request"), "reason": r.get("request_reason"), "user": r.get("request_by")} for r in reqs]})
 
@@ -1549,10 +2005,21 @@ if __name__ == '__main__':
         db.users.insert_one({
             "username": "admin",
             "password_hash": generate_password_hash('admin123'),
-            "role": "admin",
-            "department": "Vận Hành", # Mặc định Admin thuộc Vận Hành
+            "role": SUPERADMIN_ROLE, # ✅ First user is superadmin
+            "department": "Vận Hành", 
             "created_at": now_dt()
         })
+    
+    # ✅ Auto-create specific superadmin user
+    if db.users.count_documents({"username": "superadmin"}) == 0:
+        db.users.insert_one({
+            "username": "superadmin",
+            "password_hash": generate_password_hash('superadmin123'),
+            "role": SUPERADMIN_ROLE,
+            "department": "Vận Hành",
+            "created_at": now_dt()
+        })
+        print("Created superadmin/superadmin123")
 
     init_pancake_pages(True)
 
@@ -1560,8 +2027,10 @@ if __name__ == '__main__':
         scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', seconds=60)
         scheduler.add_job(id='l_leads', func=sync_all_lark_task, trigger='interval', seconds=60)
         scheduler.add_job(id='l_tasks', func=sync_lark_tasks_task, trigger='interval', seconds=60)
-        scheduler.add_job(id='auto_missed', func=auto_mark_missed_tasks, trigger='interval', seconds=60)
-        scheduler.add_job(id='auto_missed_personal', func=auto_mark_personal_tasks, trigger='interval', seconds=60)
+        
+        # ✅ Unified auto overdue scheduler
+        scheduler.add_job(id='auto_overdue', func=auto_scan_overdue_tasks, trigger='interval', seconds=60)
+        
         scheduler.start()
         
     app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)

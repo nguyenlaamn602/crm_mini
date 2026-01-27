@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Task Detail - {{ task.todo_content[:20] }}{% endblock %}
+{% block title %}Task Detail - {{ (task.todo_content or '')[:20] }}{% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -7,24 +7,37 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <a href="{{ url_for('view_tasks') }}" class="text-decoration-none text-secondary small fw-bold">
-                <i class="bi bi-arrow-left me-1"></i> Back to List
+                <i class="bi bi-arrow-left me-1"></i> Back to Tasks
             </a>
             <h3 class="fw-bold mt-2 mb-0 text-dark">Task Details</h3>
             <span class="text-muted small">ID: {{ task.id }}</span>
         </div>
         
-        <!-- Quick Status Actions (Clickable) -->
+        <!-- Quick Status Actions -->
         <div>
-            <button id="statusBtn" class="btn p-0 border-0 shadow-none" 
-                    onclick="toggleTaskStatus('{{ task.id }}', '{{ task.status }}')">
-                {% if task.status == 'Done' %}
-                    <span class="badge bg-success fs-6 rounded-pill px-4 py-2 cursor-pointer">Done</span>
-                {% elif task.status == 'Missed' %}
-                    <span class="badge bg-danger fs-6 rounded-pill px-4 py-2 cursor-pointer">Missed</span>
-                {% else %}
-                    <span class="badge bg-info text-dark fs-6 rounded-pill px-4 py-2 cursor-pointer">Not Yet</span>
-                {% endif %}
-            </button>
+            {% set s_display = task.status if task.status in statuses else 'todo' %}
+            
+            <div class="dropdown">
+              <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
+                     {% if s_display == 'todo' %}btn-secondary
+                     {% elif s_display == 'doing' %}btn-warning text-white
+                     {% elif s_display == 'done' %}btn-success
+                     {% elif s_display == 'overdue' %}btn-danger
+                     {% elif s_display == 'cancelled' %}btn-dark
+                     {% endif %}"
+                     type="button" data-bs-toggle="dropdown">
+                {{ s_display|upper }}
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2">
+                {% for s in statuses %}
+                    <li>
+                        <button class="dropdown-item rounded-2" onclick="updateDetailStatus('{{ task.id }}', '{{ s }}')">
+                            {{ s|upper }}
+                        </button>
+                    </li>
+                {% endfor %}
+              </ul>
+            </div>
         </div>
     </div>
 
@@ -46,42 +59,66 @@
                     <hr class="text-muted opacity-25">
 
                     <div class="row g-3">
+                        <!-- Context (Customer Name) -->
                         <div class="col-md-6">
                             <label class="small text-muted fw-bold">
-                                Customer 
-                                {% if task.is_normal_task %}
-                                <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
-                                {% endif %}
+                                Context (Customer/Dept)
                             </label>
                             
-                            <!-- EDITABLE CUSTOMER NAME (Only for normal tasks) -->
-                            {% if task.is_normal_task %}
-                            <div id="customer_name" 
-                                 class="fw-semibold editable-field p-1 rounded-2"
-                                 onclick="makeEditable(this, 'customer_name', 'text')">
-                                {{ task.customer_name or 'Unknown' }}
-                            </div>
+                            <!-- Display Logic for Context -->
+                            {% if task.is_department_task %}
+                                <div class="fw-semibold text-secondary">
+                                    {{ task.department or '---' }}
+                                </div>
+                            {% elif task.is_normal_task and current_user.role in ['superadmin', 'admin'] %}
+                                <!-- EDITABLE NAME if Normal Task & Admin -->
+                                <div id="customer_name" 
+                                     class="fw-semibold editable-field p-1 rounded-2"
+                                     onclick="makeEditable(this, 'customer_name', 'text')">
+                                    {{ task.customer_name or 'Unknown' }}
+                                </div>
                             {% else %}
-                             <div class="fw-semibold text-secondary">
-                                {{ task.customer_name or '---' }}
-                            </div>
+                                <!-- Read-only for others -->
+                                <div class="fw-semibold text-dark">
+                                    {{ task.customer_name or '---' }}
+                                </div>
                             {% endif %}
                             
-                            {% if task.customer_psid %}
+                            {% if task.customer_psid and task.is_normal_task %}
                                 <a href="/customer/{{ task.customer_psid }}" class="text-decoration-none small text-primary d-block mt-1">
                                     View Customer Profile
                                 </a>
                             {% endif %}
                         </div>
+
                         <div class="col-md-6">
                             <label class="small text-muted fw-bold">Assignee</label>
-                            <div class="d-flex align-items-center mt-1">
-                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold;">
-                                    {{ task.assignee[0].upper() if task.assignee else '?' }}
-                                </div>
-                                <span>{{ task.assignee }}</span>
+                            <div class="d-flex align-items-center mt-1 flex-wrap gap-1">
+                                {% if task.kind == 'corp' or task.kind == 'department' %}
+                                    {% for name in task.assignees %}
+                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">
+                                            {{ name }}
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold;">
+                                        {{ task.assignee[0].upper() if task.assignee else '?' }}
+                                    </div>
+                                    <span>{{ task.assignee }}</span>
+                                {% endif %}
                             </div>
                         </div>
+                        
+                        <!-- Department Label (Extra visual cue) -->
+                        <div class="col-md-6 {% if not task.department %}d-none{% endif %}">
+                            <label class="small text-muted fw-bold">Department Tag</label>
+                            <div class="d-flex align-items-center mt-1">
+                                <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-3 py-2">
+                                    {{ task.department }}
+                                </span>
+                            </div>
+                        </div>
+
                         <div class="col-md-6">
                             <label class="small text-muted fw-bold">
                                 Due Date <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
@@ -99,6 +136,17 @@
                             <label class="small text-muted fw-bold">Last Updated</label>
                             <div class="text-muted">
                                 {{ task.updated_at.strftime('%H:%M %d/%m') if task.updated_at else '---' }}
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="small text-muted fw-bold">
+                                Note <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                            </label>
+                            <div id="note" 
+                                 class="fw-medium text-dark editable-field p-2 rounded-2 bg-light border"
+                                 onclick="makeEditable(this, 'note', 'textarea')">
+                                {{ task.note or '---' }}
                             </div>
                         </div>
                     </div>
@@ -146,22 +194,26 @@
                 </div>
             </div>
 
-            <!-- Meta Info / Actions (Simplified) -->
-             <div class="card border-0 shadow-sm rounded-4 bg-light">
+            <div class="card border-0 shadow-sm rounded-4 bg-light">
                 <div class="card-body p-4">
                     <div class="d-grid gap-2">
-                         <!-- Dynamically determine delete route based on task ID -->
-                         {% if current_user.role == 'admin' %}
-                            {% set delete_url = '/task/delete/' ~ task.id %}
-                            {% if task.id.startswith('corp_') %}
-                                {% set delete_url = '/corp-task/delete/' ~ task.id %}
-                            {% elif task.id.startswith('ptask_') %}
-                                {% set delete_url = '/personal-task/delete/' ~ task.id %}
-                            {% endif %}
-                            
-                            <form action="{{ delete_url }}" method="POST" onsubmit="return confirm('Permanently delete this task?')">
+                        {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
+                        {# Rule: Personal tasks (own) -> Delete. Admin/Superadmin -> Delete. Others (User viewing non-personal) -> Request Delete #}
+                        
+                        {% set is_own_personal = (task.kind == 'personal' and task.user_id|string == current_user.id|string) %}
+                        {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
+                        
+                        {% if is_own_personal or is_admin_or_super %}
+                            <!-- Direct Delete for Admin/Superadmin OR Personal Task Owner -->
+                            <form action="/task/delete/{{ task.id }}" method="POST" onsubmit="return confirm('Permanently delete this task?')">
                                 <button class="btn btn-link text-danger w-100 text-decoration-none">Delete Task</button>
                             </form>
+                        {% else %}
+                            <!-- User viewing Non-Personal (Corp/Dept/Customer) -> Request Delete -->
+                            <button class="btn btn-link text-warning w-100 text-decoration-none" 
+                                    data-bs-toggle="modal" data-bs-target="#requestDeleteModal">
+                                <i class="bi bi-exclamation-circle me-1"></i> Request Delete
+                            </button>
                         {% endif %}
                     </div>
                 </div>
@@ -170,8 +222,29 @@
     </div>
 </div>
 
+<!-- Request Delete Modal -->
+<div class="modal fade" id="requestDeleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header border-0 bg-warning py-2 px-3 text-dark">
+        <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Request Delete</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="/task/request-delete-generic/{{ task.id }}" method="POST">
+        <div class="modal-body p-3">
+          <p class="small text-muted mb-2">You don't have permission to delete this task directly. Submit a request to Admin?</p>
+          <label class="form-label small fw-bold">Reason:</label>
+          <textarea name="reason" class="form-control form-control-sm" rows="3" required placeholder="Why delete this task?"></textarea>
+        </div>
+        <div class="modal-footer border-0 p-2 bg-light">
+          <button type="submit" class="btn btn-warning btn-sm w-100 rounded-pill">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <style>
-    /* Visual hint that fields are editable */
     .editable-field {
         cursor: pointer;
         transition: all 0.2s ease;
@@ -181,7 +254,6 @@
         background-color: #f8f9fa;
         border-color: #dee2e6;
     }
-    /* Flashing effect on save */
     @keyframes flash-success {
         0% { background-color: #d1e7dd; }
         100% { background-color: transparent; }
@@ -189,18 +261,14 @@
     .flash-saved {
         animation: flash-success 1s ease-out;
     }
-    .cursor-pointer {
-        cursor: pointer;
-    }
 </style>
 
 <script>
     let isEditing = false;
     const TASK_ID = "{{ task.id }}";
 
-    // --- 1. Inline Edit Logic ---
     function makeEditable(element, fieldName, type) {
-        if (isEditing) return; // Prevent multiple edits at once
+        if (isEditing) return;
         isEditing = true;
 
         const currentValue = element.innerText.trim();
@@ -279,7 +347,7 @@
                 element.classList.add('flash-saved');
                 setTimeout(() => element.classList.remove('flash-saved'), 1000);
             } else {
-                alert("Failed to save. Please try again.");
+                alert("Failed to save.");
             }
         } catch (e) {
             console.error(e);
@@ -287,65 +355,25 @@
         }
     }
 
-    // --- 2. Status Toggle Logic ---
-    async function toggleTaskStatus(taskId, currentStatus) {
-        let nextStatus = 'Not_yet';
-        if (currentStatus === 'Not_yet' || currentStatus === 'New' || currentStatus === 'Unreceived') nextStatus = 'Done';
-        else if (currentStatus === 'Done') nextStatus = 'Missed';
-        
-        const btn = document.getElementById('statusBtn');
-        btn.style.opacity = '0.5';
-        btn.disabled = true;
-
+    async function updateDetailStatus(taskId, newStatus) {
         try {
-            // Use existing quick-update endpoint
-            let url = `/task/quick-update/${taskId}`;
+            const formData = new FormData();
+            formData.append('status', newStatus);
             
-            // Check ID prefix to determine route (Simple heuristic based on your ID generation)
-            if (taskId.startsWith('corp_')) {
-                url = `/corp-task/status/${taskId}`; // Corp task uses different route/logic
-            } else if (taskId.startsWith('ptask_')) {
-                url = `/personal-task/quick-update/${taskId}`;
-            }
-
-            const payload = taskId.startsWith('corp_') ? {status: nextStatus} : (new FormData());
-            
-            let options = {};
-            
-            if (taskId.startsWith('corp_')) {
-                 options = {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: JSON.stringify(payload)
-                };
+            const res = await fetch(`/task/quick-update/${taskId}`, {
+                method: 'POST',
+                body: formData,
+                headers: {'X-Requested-With': 'XMLHttpRequest'}
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                window.location.reload();
             } else {
-                // Form Data for others (based on old code)
-                const formData = new FormData();
-                formData.append('status', nextStatus);
-                options = {
-                    method: 'POST',
-                    body: formData,
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
-                };
+                alert('Failed to update status.');
             }
-
-            const response = await fetch(url, options);
-            const result = await response.json();
-            
-            if (result.status === 'success') {
-                window.location.reload(); // Reload to reflect status change visually
-            } else {
-                alert('Could not update status.');
-                btn.style.opacity = '1';
-                btn.disabled = false;
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            btn.style.opacity = '1';
-            btn.disabled = false;
+        } catch(e) {
+            console.error(e);
+            alert('Error');
         }
     }
 </script>

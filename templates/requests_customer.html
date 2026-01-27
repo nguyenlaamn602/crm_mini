@@ -7,15 +7,22 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h4 class="fw-bold mb-0">Customer Requests</h4>
-            <p class="text-muted small">Automated messages from Telegram/Zalo</p>
+            <p class="text-muted small">Automated messages from Telegram/Zalo & Manual Requests</p>
         </div>
         
-        <form class="d-flex" method="GET">
-            <div class="input-group">
-                <input type="text" name="search" class="form-control" placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
-                <button class="btn btn-primary" type="submit">Search</button>
-            </div>
-        </form>
+        <div class="d-flex gap-2">
+            <!-- Add Manual Request Button (Styled like Tasks) -->
+            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-2" data-bs-toggle="modal" data-bs-target="#addRequestModal">
+                <i class="bi bi-plus-lg me-1"></i> Add Request
+            </button>
+            
+            <form class="d-flex" method="GET">
+                <div class="input-group">
+                    <input type="text" name="search" class="form-control" placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
+                    <button class="btn btn-primary" type="submit">Search</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <div class="card border-0 shadow-sm rounded-4">
@@ -25,8 +32,10 @@
                     <thead class="bg-light text-uppercase" style="font-size: 0.8rem;">
                         <tr>
                             <th class="ps-4">Source</th>
-                            <th>Sender</th> <!-- ✅ Đã thêm cột Sender -->
+                            <th>Sender</th>
                             <th>Customer</th>
+                            <th>Status</th>
+                            <th>Business Type</th>
                             <th>Content</th>
                             <th>Time</th>
                             <th class="text-end pe-4">Actions</th>
@@ -34,14 +43,17 @@
                     </thead>
                     <tbody>
                         {% for req in requests %}
-                        <tr>
+                        <!-- Clickable row to detail, except action column -->
+                        <tr style="cursor: pointer;" onclick="window.location.href='{{ url_for('view_customer_request_detail', id=req.id) }}'">
                             <td class="ps-4">
-                                <span class="badge rounded-pill px-3 {% if req.app == 'Tele' %}bg-info-subtle text-info{% else %}bg-primary-subtle text-primary{% endif %}">
+                                <span class="badge rounded-pill px-3 
+                                    {% if req.app == 'Tele' %}bg-info-subtle text-info
+                                    {% elif req.app == 'Manual' %}bg-warning-subtle text-warning
+                                    {% else %}bg-primary-subtle text-primary{% endif %}">
                                     {{ req.app }}
                                 </span>
                             </td>
                             
-                            <!-- ✅ Hiển thị Sender -->
                             <td>
                                 <div class="d-flex align-items-center">
                                     <div class="bg-secondary bg-opacity-10 text-secondary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold; font-size: 0.8rem;">
@@ -53,29 +65,37 @@
 
                             <td>
                                 <div class="fw-bold text-primary">{{ req.customer_name }}</div>
-                                {% if req.customer_psid %}
-                                    <a href="{{ url_for('view_customer_detail', psid=req.customer_psid) }}" class="small text-decoration-none text-muted">
-                                        <i class="bi bi-box-arrow-up-right me-1"></i>View Lead
-                                    </a>
-                                {% else %}
-                                    <span class="small text-muted fst-italic">Unmapped</span>
-                                {% endif %}
                             </td>
                             
                             <td>
-                                <div class="text-wrap text-secondary" style="max-width: 350px; font-size: 0.9rem;">
+                                <span class="badge rounded-pill border px-2 py-1
+                                    {% if req.status == 'Thanh toán' %}bg-success-subtle text-success border-success
+                                    {% elif req.status == 'Lên đơn' %}bg-primary-subtle text-primary border-primary
+                                    {% elif req.status == 'Trouble' %}bg-danger-subtle text-danger border-danger
+                                    {% else %}bg-light text-dark border-secondary{% endif %}">
+                                    {{ req.status or 'Request' }}
+                                </span>
+                            </td>
+
+                            <td>
+                                <span class="badge rounded-pill border px-2 py-1 fw-normal text-dark bg-white">
+                                    {{ req.business_type or 'New' }}
+                                </span>
+                            </td>
+                            
+                            <td>
+                                <div class="text-wrap text-secondary" style="max-width: 250px; font-size: 0.9rem;">
                                     {{ req.content }}
                                 </div>
                             </td>
                             
                             <td>
-                                <!-- ✅ Hiển thị thời gian -->
                                 <div class="small text-muted fw-medium">
                                     {{ req.created_at.strftime('%H:%M %d/%m') if req.created_at else '---' }}
                                 </div>
                             </td>
                             
-                            <td class="text-end pe-4">
+                            <td class="text-end pe-4" onclick="event.stopPropagation()">
                                 {% if current_user.role == 'admin' %}
                                 <form action="{{ url_for('delete_customer_request', id=req.id) }}" method="POST" onsubmit="return confirm('Delete this request?');">
                                     <button type="submit" class="btn btn-outline-danger btn-sm rounded-circle shadow-sm" style="width: 32px; height: 32px; padding: 0;">
@@ -87,7 +107,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center py-5 text-muted">
+                            <td colspan="8" class="text-center py-5 text-muted">
                                 <i class="bi bi-inbox fs-1 d-block mb-2 opacity-25"></i>
                                 No requests found.
                             </td>
@@ -96,6 +116,54 @@
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Request Modal (Synced with Tasks Modal Style) -->
+<div class="modal fade" id="addRequestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle me-2"></i> Create Manual Request</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('add_customer_request') }}" method="POST">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">REQUEST CONTENT</label>
+                        <textarea name="content" class="form-control rounded-3" rows="3" required placeholder="Enter request details..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
+                        <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-muted small">STATUS</label>
+                            <select name="status" class="form-select rounded-3">
+                                {% for s in request_statuses %}
+                                <option value="{{ s }}" {% if s == 'Request' %}selected{% endif %}>{{ s }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-muted small">BUSINESS TYPE</label>
+                            <select name="business_type" class="form-select rounded-3">
+                                {% for b in business_types %}
+                                <option value="{{ b }}" {% if b == 'New' %}selected{% endif %}>{{ b }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create Request</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

@@ -15,4 +15,4 @@ journalctl -u crm -f
 
 
 //git link crm
- https://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@github.com/nguyenlaamn602/crm_mini.git
+ https://github.com/nguyenlaamn602/crm_mini.git

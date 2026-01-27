@@ -337,8 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
     setup('tasks-toggle','[data-tasks-item]','tasks-arrow','tasks-open',
         "{{ request.path }}".includes("tasks"));
 
-    setup('tools-toggle','[data-tools-item]','tools-arrow','tools-open',
-        "{{ request.path }}".startsWith("/tools"));
+    /*setup('tools-toggle','[data-tools-item]','tools-arrow','tools-open',
+        "{{ request.path }}".startsWith("/tools"));*/
 
     setup('ops-toggle','[data-ops-item]','ops-arrow','ops-open',
         "{{ request.path }}".startsWith("/broadcast"));

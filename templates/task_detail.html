@@ -198,6 +198,15 @@
             <div class="card border-0 shadow-sm rounded-4 bg-light">
                 <div class="card-body p-4">
                     <div class="d-grid gap-2">
+                        {# ✅ LOGIC: CONVERT PERSONAL TASK #}
+                        {% if task.kind == 'personal' and task.user_id|string == current_user.id|string %}
+                             <button class="btn btn-primary rounded-pill w-100" 
+                                    data-bs-toggle="modal" data-bs-target="#convertTaskModal">
+                                <i class="bi bi-arrow-repeat me-1"></i> Convert Type
+                            </button>
+                            <hr>
+                        {% endif %}
+
                         {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
                         {# Rule: Personal tasks (own) -> Delete. Admin/Superadmin -> Delete. Others (User viewing non-personal) -> Request Delete #}
                         
@@ -222,6 +231,184 @@
         </div>
     </div>
 </div>
+
+<!-- Convert Task Modal (For Personal Tasks) -->
+{% if task.kind == 'personal' %}
+<div class="modal fade" id="convertTaskModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+      <div class="modal-header bg-primary text-white py-3 px-4">
+        <h5 class="modal-title fw-bold"><i class="bi bi-arrow-repeat me-2"></i>Convert Task Type</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="/task/convert/{{ task.id }}" method="POST" enctype="multipart/form-data">
+        <div class="modal-body p-4">
+            <p class="text-muted small mb-3">Select a new type for this task. All relevant fields will be available for update.</p>
+            
+            <div class="mb-3">
+                <label class="form-label fw-bold small">TARGET TYPE</label>
+                <select name="target_type" id="targetTypeSelect" class="form-select rounded-3" onchange="toggleConvertFields()">
+                    <option value="customer">Customer Task</option>
+                    <option value="corp">Corporate Task</option>
+                    <option value="department">Department Task</option>
+                    <option value="request">Customer Request</option>
+                </select>
+            </div>
+
+            <hr class="my-3 opacity-25">
+
+            <!-- COMMON FIELDS (Always needed/editable) -->
+            <div class="mb-3">
+                <label class="form-label fw-bold small text-muted">TITLE / CONTENT</label>
+                <textarea name="todo_content" class="form-control rounded-3" rows="2">{{ task.todo_content }}</textarea>
+            </div>
+            
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <label class="form-label fw-bold small text-muted">DEADLINE</label>
+                    <input type="datetime-local" name="due_at" class="form-control rounded-3" 
+                           value="{{ task.due_at.strftime('%Y-%m-%dT%H:%M') if task.due_at else '' }}">
+                </div>
+                <div class="col-6">
+                    <label class="form-label fw-bold small text-muted">ATTACHMENT</label>
+                    <input type="file" name="attachment" class="form-control rounded-3">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label fw-bold small text-muted">NOTE</label>
+                <textarea name="note" class="form-control rounded-3" rows="2">{{ task.note or '' }}</textarea>
+            </div>
+
+            <!-- TYPE SPECIFIC FIELDS -->
+            
+            <!-- 1. CUSTOMER FIELDS -->
+            <div id="fields_customer" class="type-fields">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-info">CUSTOMER NAME</label>
+                    <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter customer name...">
+                </div>
+                <!-- ✅ ASSIGNEE FOR CUSTOMER (Single Select) -->
+                {% if current_user.role in ['superadmin', 'admin'] %}
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-info">ASSIGN TO</label>
+                    <select name="assigned_user_ids" class="form-select rounded-3">
+                        <option value="{{ current_user._id }}">Me ({{ current_user.username }})</option>
+                        {% for u in users_list %}
+                            {% if u._id|string != current_user.id|string %}
+                            <option value="{{ u._id }}">{{ u.username }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- 2. CORP FIELDS -->
+            <div id="fields_corp" class="type-fields d-none">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-primary">DEPARTMENTS</label>
+                    <div class="border rounded-3 p-2 bg-light" style="max-height:100px; overflow-y:auto;">
+                        {% for d in corp_departments %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="departments" value="{{ d }}" id="conv_c_dept_{{ loop.index }}">
+                            <label class="form-check-label" for="conv_c_dept_{{ loop.index }}">{{ d }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <!-- ✅ ASSIGNEES FOR CORP (Multi Checkbox) -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-primary">ASSIGNEES</label>
+                    <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                        {% for u in users_list %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="corp_assign_{{ u._id }}"
+                                   {% if u._id|string == current_user.id|string %}checked{% endif %}>
+                            <label class="form-check-label small" for="corp_assign_{{ u._id }}">{{ u.username }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. DEPT FIELDS -->
+            <div id="fields_department" class="type-fields d-none">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-success">DEPARTMENT</label>
+                    <select name="department" id="convert_dept_select" class="form-select rounded-3" onchange="filterDeptAssignees()">
+                        {% for d in department_task_departments %}
+                        <option value="{{ d }}" {% if d == current_user.department %}selected{% endif %}>{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <!-- ✅ ASSIGNEES FOR DEPT (Multi Checkbox) -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-success">ASSIGNEES</label>
+                    <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                        {% for u in users_list %}
+                        <!-- ✅ Added data-user-dept for filtering -->
+                        <div class="form-check dept-assignee-row" data-user-dept="{{ u.department }}">
+                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="dept_assign_{{ u._id }}"
+                                   {% if u._id|string == current_user.id|string %}checked{% endif %}>
+                            <label class="form-check-label small" for="dept_assign_{{ u._id }}">{{ u.username }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. REQUEST FIELDS -->
+            <div id="fields_request" class="type-fields d-none">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-warning">CUSTOMER NAME</label>
+                    <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Customer name...">
+                </div>
+                
+                <!-- ✅ ASSIGNEES FOR REQUEST (Multi Checkbox) -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-warning">ASSIGNEES</label>
+                    <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                        {% for u in users_list %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="req_assign_{{ u._id }}"
+                                   {% if u._id|string == current_user.id|string %}checked{% endif %}>
+                            <label class="form-check-label small" for="req_assign_{{ u._id }}">{{ u.username }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-6">
+                        <label class="form-label fw-bold small text-warning">BUSINESS TYPE</label>
+                        <select name="business_type" class="form-select rounded-3">
+                            {% for b in business_types %}
+                            <option value="{{ b }}">{{ b }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-bold small text-warning">STATUS (NOTE)</label>
+                        <select name="request_status_note" class="form-select rounded-3">
+                            {% for s in request_statuses %}
+                            <option value="{{ s }}">{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+        <div class="modal-footer border-0 bg-light px-4 py-3">
+            <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary rounded-pill shadow-sm">Convert</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <!-- Request Delete Modal -->
 <div class="modal fade" id="requestDeleteModal" tabindex="-1" aria-hidden="true">
@@ -377,5 +564,59 @@
             alert('Error');
         }
     }
+
+    // ✅ Function to filter Dept Assignees based on selected Dept
+    function filterDeptAssignees() {
+        const select = document.getElementById('convert_dept_select');
+        if (!select) return;
+        
+        const selectedDept = select.value;
+        const rows = document.querySelectorAll('.dept-assignee-row');
+        
+        rows.forEach(row => {
+            const userDept = row.getAttribute('data-user-dept');
+            const checkbox = row.querySelector('input[type="checkbox"]');
+            
+            if (userDept === selectedDept) {
+                row.classList.remove('d-none');
+            } else {
+                row.classList.add('d-none');
+                if (checkbox) checkbox.checked = false; // Uncheck hidden users
+            }
+        });
+    }
+
+    function toggleConvertFields() {
+        const val = document.getElementById('targetTypeSelect').value;
+        const allFields = document.querySelectorAll('.type-fields');
+        
+        // Hide all first
+        allFields.forEach(el => el.classList.add('d-none'));
+
+        // Show specific one
+        const targetDiv = document.getElementById(`fields_${val}`);
+        if (targetDiv) {
+            targetDiv.classList.remove('d-none');
+            // Re-enable assigned_user_ids inside visible div
+            const visibleAssignees = targetDiv.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
+            visibleAssignees.forEach(el => el.disabled = false);
+
+            // ✅ TRIGGER FILTER IF DEPT TYPE
+            if (val === 'department') {
+                filterDeptAssignees();
+            }
+        }
+        
+        // Disable inputs in hidden fields to prevent conflict
+        allFields.forEach(div => {
+            if (div.id !== `fields_${val}`) {
+                 const hiddenAssignees = div.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
+                 hiddenAssignees.forEach(el => el.disabled = true);
+            }
+        });
+    }
+    
+    // Run on load to set initial state
+    document.addEventListener('DOMContentLoaded', toggleConvertFields);
 </script>
 {% endblock %}

@@ -149,8 +149,47 @@
             </div>
         </div>
 
-        <!-- Right Column: Actions -->
+        <!-- Right Column: Attachment & Actions -->
         <div class="col-lg-4">
+             <!-- ✅ NEW: Attachment Card (Copied from task_detail) -->
+            <div class="card border-0 shadow-sm rounded-4 mb-4">
+                <div class="card-header bg-white border-0 pt-4 pb-0 px-4">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-paperclip me-2"></i>Attachment</h6>
+                </div>
+                <div class="card-body p-4">
+                    {% if req.attachment %}
+                        <div class="p-3 bg-light rounded-3 border mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-file-earmark-text fs-3 text-primary me-3"></i>
+                                <div class="overflow-hidden">
+                                    <div class="fw-bold text-truncate" title="{{ req.attachment }}">{{ req.attachment }}</div>
+                                    <a href="{{ url_for('static', filename='uploads/' + req.attachment) }}" target="_blank" class="small text-decoration-none">View / Download</a>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="text-center text-muted py-3">
+                            <i class="bi bi-file-earmark-x fs-1 opacity-25"></i>
+                            <p class="small mt-2">No file attached</p>
+                        </div>
+                    {% endif %}
+
+                    <hr class="my-3">
+
+                    <!-- Upload Form (Always visible) -->
+                    <!-- Reuse the generic /task/detail/upload route because it handles customer_requests by ID -->
+                    <form action="/task/detail/upload/{{ req.id }}" method="POST" enctype="multipart/form-data">
+                        <label class="form-label small fw-bold text-secondary">
+                            {% if req.attachment %}Replace File{% else %}Upload File{% endif %}
+                        </label>
+                        <input type="file" name="attachment" class="form-control form-control-sm mb-3" required>
+                        <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill">
+                            <i class="bi bi-cloud-upload me-1"></i> Upload
+                        </button>
+                    </form>
+                </div>
+            </div>
+
             <div class="card border-0 shadow-sm rounded-4 bg-light">
                 <div class="card-body p-4">
                     <h6 class="fw-bold text-dark mb-3">Actions</h6>
@@ -180,11 +219,13 @@
             <div class="modal-body p-0">
                 <div class="p-2" style="max-height: 300px; overflow-y: auto;">
                     {% for u in users_list %}
-                    <div class="form-check p-2 border-bottom">
-                        <input class="form-check-input ms-1" type="checkbox" id="chk_{{ u._id }}" 
+                    <!-- ✅ FIX: Added position-relative to fix stretched-link issue -->
+                    <div class="form-check p-2 border-bottom position-relative">
+                        <input class="form-check-input ms-1" type="checkbox" id="chk_{{ u._id }}_{{ loop.index }}" 
                                value="{{ u._id }}" 
                                {% if u._id in (req.assigned_to if req.assigned_to is iterable and req.assigned_to is not string else []) %}checked{% endif %}>
-                        <label class="form-check-label ms-2 stretched-link" for="chk_{{ u._id }}">
+                        <!-- ✅ FIX: Unique ID using loop.index -->
+                        <label class="form-check-label ms-2 stretched-link" for="chk_{{ u._id }}_{{ loop.index }}">
                             {{ u.username }}
                         </label>
                     </div>

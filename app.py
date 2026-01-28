@@ -1077,6 +1077,147 @@ def quick_update_task(id):
     
     return jsonify({"status": "success", "next": nst})
 
+# ✅ NEW: Route for Task Type Conversion
+@app.route('/task/convert/<id>', methods=['POST'])
+@login_required
+def convert_personal_task(id):
+    t, col = find_any_task(id)
+    if not t or col != 'personal_tasks': 
+        return redirect(url_for('view_tasks'))
+
+    # Only owner can convert
+    if t.get('user_id') != ObjectId(current_user.id):
+        flash('Unauthorized', 'danger')
+        return redirect(url_for('view_tasks'))
+
+    target_type = request.form.get('target_type')
+    
+    # Common fields override from Form
+    new_title = request.form.get('todo_content') or t.get("title")
+    new_due_at = parse_due_at(request.form.get('due_at')) or t.get("due_at")
+    new_note = request.form.get('note', '')
+    
+    new_data = {
+        "created_at": t.get("created_at"),
+        "updated_at": now_dt(),
+        "status": "todo",
+        "due_at": new_due_at,
+        "attachment": t.get("attachment"), # Keep old attachment
+        "note": new_note
+    }
+
+    # Handle new file upload if provided
+    if 'attachment' in request.files:
+        f = save_uploaded_file(request.files['attachment'])
+        if f: new_data['attachment'] = f
+
+    # ✅ PROCESS ASSIGNEES FOR CONVERSION
+    assigned_user_ids = request.form.getlist('assigned_user_ids')
+    assigned_to_oids = []
+    assignees_names = []
+    
+    # Defaults to Current User if none selected
+    if not assigned_user_ids:
+        assigned_to_oids = [ObjectId(current_user.id)]
+        assignees_names = [current_user.username]
+    else:
+        try:
+            # Filter valid users
+            users = list(db.users.find({"_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}}))
+            assigned_to_oids = [u["_id"] for u in users]
+            assignees_names = [u.get("username", "user") for u in users]
+        except:
+            # Fallback
+            assigned_to_oids = [ObjectId(current_user.id)]
+            assignees_names = [current_user.username]
+
+    # Helper for single assignee (Customer Task)
+    primary_assignee_name = assignees_names[0] if assignees_names else current_user.username
+    primary_assignee_oid = assigned_to_oids[0] if assigned_to_oids else ObjectId(current_user.id)
+
+
+    if target_type == 'customer':
+        new_id = 'task_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        customer_name = request.form.get('customer_name') or 'Converted Task'
+        customer_psid, norm_name = link_customer_for_task(customer_name)
+        new_data.update({
+            "id": new_id,
+            "todo_content": new_title,
+            "customer_name": norm_name or customer_name,
+            "customer_psid": customer_psid,
+            "assignee": primary_assignee_name, # ✅ Single Assignee Name
+            "assigned_to": primary_assignee_oid, # ✅ Single OID
+            "user_id": ObjectId(current_user.id),
+            "assigned_by": current_user.username
+        })
+        db.tasks.insert_one(new_data)
+        
+    elif target_type == 'corp':
+        new_id = 'corp_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        # Handle multiple departments
+        depts = request.form.getlist('departments')
+        if not depts and request.form.get('department'): depts = [request.form.get('department')]
+        dept_display = ", ".join(depts) if depts else current_user.department
+
+        new_data.update({
+            "id": new_id,
+            "title": new_title,
+            "departments": depts,
+            "department": dept_display,
+            "assigned_to": assigned_to_oids, # ✅ List OIDs
+            "assignees": assignees_names,     # ✅ List Names
+            "assignee": primary_assignee_name,
+            "assigned_by": current_user.username
+        })
+        db.corp_tasks.insert_one(new_data)
+
+    elif target_type == 'department':
+        new_id = 'dept_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        dept = request.form.get('department') or current_user.department
+        new_data.update({
+            "id": new_id,
+            "title": new_title,
+            "department": dept,
+            "assigned_to": assigned_to_oids, # ✅ List OIDs
+            "assignees": assignees_names,     # ✅ List Names
+            "assignee": primary_assignee_name,
+            "assigned_by": current_user.username
+        })
+        db.department_tasks.insert_one(new_data)
+
+    elif target_type == 'request':
+        new_id = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        req_content = request.form.get('content') or new_title
+        c_name = request.form.get('customer_name') or 'Converted'
+        c_psid, c_norm = link_customer_for_task(c_name)
+        req_status_note = request.form.get('request_status_note') # Special field
+        
+        new_data.update({
+            "id": new_id,
+            "content": req_content,
+            "customer_name": c_norm or c_name,
+            "customer_psid": c_psid,
+            "app": "Manual",
+            "status": "todo",
+            "note": req_status_note, 
+            "business_type": request.form.get('business_type', 'New'),
+            "assigned_by": current_user.username,
+            "sender_name": current_user.username,
+            "assigned_to": assigned_to_oids, # ✅ List OIDs
+            "assignees": assignees_names,     # ✅ List Names
+            "assignee": primary_assignee_name
+        })
+        db.customer_requests.insert_one(new_data)
+
+    else:
+        flash('Invalid target type', 'danger')
+        return redirect(url_for('view_task_detail_page', id=id))
+
+    # Delete old task
+    db.personal_tasks.delete_one({"id": id})
+    flash('Task converted successfully', 'success')
+    return redirect(url_for('view_tasks'))
+
 @app.route('/task/detail/<id>')
 @login_required
 def view_task_detail_page(id):
@@ -1124,7 +1265,15 @@ def view_task_detail_page(id):
         elif current_user.role in ['admin', 'user'] and current_user.department == task.get('department'): has_perm = True
             
     if not has_perm: return redirect(url_for('view_tasks'))
-    return render_template('task_detail.html', task=task, statuses=UNIFIED_STATUSES)
+    
+    # ✅ PASS ALL CONSTANTS AND USERS FOR CONVERT MODAL
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
+    return render_template('task_detail.html', task=task, statuses=UNIFIED_STATUSES, departments=USER_DEPARTMENTS,
+                           corp_departments=CORP_DEPARTMENTS, 
+                           department_task_departments=DEPARTMENT_TASK_DEPARTMENTS,
+                           request_statuses=REQUEST_STATUSES,
+                           business_types=BUSINESS_TYPES,
+                           users_list=users_list) # ✅ Pass users_list
 
 @app.route('/task/detail/upload/<id>', methods=['POST'])
 @login_required
@@ -1133,6 +1282,10 @@ def upload_task_file_detail(id):
     if task and 'attachment' in request.files:
         f = save_uploaded_file(request.files['attachment'])
         if f: db[col_name].update_one({"id": id}, {"$set": {"attachment": f, "updated_at": now_dt()}})
+    
+    # Redirect based on type
+    if col_name == 'customer_requests':
+         return redirect(url_for('view_customer_request_detail', id=id))
     return redirect(url_for('view_task_detail_page', id=id))
 
 @app.route('/task/delete/<id>', methods=['POST'])
@@ -1163,10 +1316,20 @@ def delete_task(id):
 
     if can_delete:
         db[col].delete_one({"id": id})
+        
+        # ✅ FIX: Redirect to main tasks list with correct type filter
+        redirect_type = ''
+        if col == 'tasks': redirect_type = 'customer'
+        elif col == 'corp_tasks': redirect_type = 'corp'
+        elif col == 'personal_tasks': redirect_type = 'personal'
+        elif col == 'department_tasks': redirect_type = 'department'
+        elif col == 'customer_requests': redirect_type = 'request'
+        
+        return redirect(url_for('view_tasks', type=redirect_type))
     else:
         flash("Bạn không có quyền xoá task này.", "danger")
 
-    return redirect(request.referrer or url_for('view_tasks'))
+    return redirect(url_for('view_tasks'))
 
 # ✅ NEW: Route for Generic Request Delete (Popup -> Telegram)
 @app.route('/task/request-delete-generic/<id>', methods=['POST'])
@@ -1697,7 +1860,8 @@ def add_customer_request():
         "sender_name": current_user.username,
         "assigned_to": assigned_to, # ✅ List[ObjectId]
         "assignees": assignees,      # ✅ List[str]
-        "assignee": assignees[0] if assignees else None
+        "assignee": assignees[0] if assignees else None,
+        "attachment": save_uploaded_file(request.files.get('attachment')) # ✅ Add Attachment
     })
     
     flash("Đã tạo yêu cầu mới", "success")
@@ -1779,7 +1943,7 @@ def delete_customer_request(id):
     # ✅ FIX: Allow Superadmin to delete
     if current_user.role in [SUPERADMIN_ROLE, 'admin']:
         db.customer_requests.delete_one({"id": id})
-    return redirect(url_for('view_customer_requests'))
+    return redirect(url_for('view_tasks', type='request')) # ✅ Redirect to unified view with 'request' filter
 
 # ---------------------------
 # ROUTES: TOOLS (NEW PRICING)
@@ -1829,7 +1993,7 @@ def pricing_calculate():
 # ---------------------------
 @app.route('/api/external/task', methods=['POST'])
 def add_external_task():
-    """API cho n8n bắn dữ liệu về - Lưu vào Customer Requests"""
+    """API cho n8n bắn dữ liệu về - Lưu vào Customer Requests HOẶC Personal Tasks"""
     auth_header = request.headers.get('Authorization')
     if auth_header != f"Bearer {app.config['SECRET_KEY']}":
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
@@ -1866,16 +2030,30 @@ def add_external_task():
             except Exception:
                 pass
     
-    # Nếu tìm thấy User nội bộ -> Lấy Username chuẩn
+    # ✅ Case 3: Fallback - Tìm theo Username (Nếu ID không khớp hoặc chưa cập nhật)
+    if not internal_user and sender_name and sender_name != 'Unknown':
+        # Tìm chính xác username (case-insensitive)
+        internal_user = db.users.find_one({"username": {"$regex": f"^{re.escape(sender_name)}$", "$options": "i"}})
+
+    # ✅ TÍNH NĂNG MỚI: Nếu map được User -> Tạo Personal Task
     if internal_user:
-        u_name = internal_user.get('username')
-        if u_name and str(u_name).strip():
-            sender_name = str(u_name).strip()
+        ptid = 'ptask_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        db.personal_tasks.insert_one({
+            "id": ptid,
+            "title": content, # Content từ Tele -> Title của task
+            "description": f"Auto-created from Telegram ({sender_name}). Customer: {raw_customer_name}",
+            "status": "todo",
+            "due_at": None, # Chưa có deadline
+            "user_id": internal_user["_id"], # Assign cho chính user đó
+            "created_at": now_dt(),
+            "updated_at": now_dt(),
+            "notify_pending": False,
+            "missed_notify_pending": False,
+            "source": "telegram" # Đánh dấu nguồn
+        })
+        return jsonify({"status": "success", "type": "personal_task", "id": ptid})
 
-    # Final check: Đảm bảo không bao giờ lưu rỗng
-    if not sender_name or sender_name == 'None':
-        sender_name = 'Unknown'
-
+    # Nếu không map được User -> Tạo Customer Request như cũ
     customer_psid, norm_name = link_customer_for_task(raw_customer_name)
     
     # ✅ Auto-detect Business Type (Loại hình kinh doanh)
@@ -1905,6 +2083,7 @@ def add_external_task():
     
     return jsonify({
         "status": "success", 
+        "type": "customer_request",
         "id": rid
     })
 

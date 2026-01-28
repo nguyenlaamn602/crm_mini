@@ -229,7 +229,7 @@
         <thead class="bg-light text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.05rem;">
           <tr>
             <th class="ps-4 py-3 text-muted">TYPE</th>
-            <th class="text-muted" style="max-width: 350px;">CONTENT</th>
+            <th class="text-muted" style="width: 250px;">CONTENT</th>
             <th class="text-muted">CUSTOMER</th>
             <th class="text-muted">DEPARTMENT</th>
             <th class="text-muted">NOTE</th>
@@ -250,9 +250,10 @@
                </span>
             </td>
 
-            <td style="max-width: 350px;">
+            <td style="max-width: 250px;">
               <div class="d-flex flex-column">
-                <span class="fw-bold text-dark" style="font-size: 0.95rem;">
+                <!-- ✅ UPDATE: Truncated Content -->
+                <span class="fw-bold text-dark d-inline-block text-truncate w-100" style="font-size: 0.95rem;" title="{{ t.todo_content }}">
                   {{ t.todo_content }}
                 </span>
                 

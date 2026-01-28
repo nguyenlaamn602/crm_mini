@@ -420,41 +420,51 @@ def index():
         "personal_tasks": db.personal_tasks.count_documents({"user_id": ObjectId(current_user.id),"status": {"$ne": "done"}})
     }
 
+    # ✅ FILTER: Calculate stats based on role
+    user_query = {}
+    if current_user.role == 'admin':
+        # Admin: Only get users in their department
+        user_query["department"] = current_user.department
+    # Superadmin gets all. User gets nothing/their own (filtered in UI)
+
     user_task_stats = []
-    all_users = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
     
-    for u in all_users:
-        uid = u["_id"]
-        uid_str = str(uid)
+    # If user is just 'user', we can optimize by skipping this heavy calc or just doing for self
+    if current_user.role in [SUPERADMIN_ROLE, 'admin']:
+        all_users = list(db.users.find(user_query, {"username": 1, "_id": 1, "department": 1}))
         
-        cus_done = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
-        cus_not = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": {"$ne": "done"}})
-        
-        corp_done = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
-        corp_not = db.corp_tasks.count_documents({
-            "assigned_to": {"$in": [uid, uid_str]}, 
-            "status": {"$nin": ["done", "cancelled"]}
-        })
-        # ✅ NEW: Department Task counts
-        dept_done = db.department_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
-        dept_not = db.department_tasks.count_documents({
-            "$or": [{"assigned_to": {"$in": [uid, uid_str]}}, {"department": u.get("department")}],
-            "status": {"$nin": ["done", "cancelled"]}
-        })
-        
-        user_task_stats.append({
-            "id": str(uid),
-            "username": u.get("username", "Unknown"),
-            "department": u.get("department", "Other"),
-            "cus_done": int(cus_done),
-            "cus_not": int(cus_not),
-            "corp_done": int(corp_done),
-            "corp_not": int(corp_not), # ✅ Add dept task counts
-            "dept_done": int(dept_done),
-            "dept_not": int(dept_not),
-            "done": int(cus_done + corp_done),
-            "not_done": int(cus_not + corp_not)
-        })
+        for u in all_users:
+            uid = u["_id"]
+            uid_str = str(uid)
+            
+            cus_done = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
+            cus_not = db.tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": {"$ne": "done"}})
+            
+            corp_done = db.corp_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
+            corp_not = db.corp_tasks.count_documents({
+                "assigned_to": {"$in": [uid, uid_str]}, 
+                "status": {"$nin": ["done", "cancelled"]}
+            })
+            # ✅ NEW: Department Task counts
+            dept_done = db.department_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
+            dept_not = db.department_tasks.count_documents({
+                "$or": [{"assigned_to": {"$in": [uid, uid_str]}}, {"department": u.get("department")}],
+                "status": {"$nin": ["done", "cancelled"]}
+            })
+            
+            user_task_stats.append({
+                "id": str(uid),
+                "username": u.get("username", "Unknown"),
+                "department": u.get("department", "Other"),
+                "cus_done": int(cus_done),
+                "cus_not": int(cus_not),
+                "corp_done": int(corp_done),
+                "corp_not": int(corp_not), # ✅ Add dept task counts
+                "dept_done": int(dept_done),
+                "dept_not": int(dept_not),
+                "done": int(cus_done + corp_done),
+                "not_done": int(cus_not + corp_not)
+            })
 
     return render_template('pages.html', stats=stats, user_task_stats=user_task_stats, departments=USER_DEPARTMENTS)
 
@@ -664,6 +674,48 @@ def view_tasks():
     search = request.args.get('search', '').lower()
     filter_department = request.args.get('department') # For department tasks
 
+    # ✅ DATE FILTER LOGIC
+    date_filter = request.args.get('date_filter')
+    custom_start = request.args.get('start_date')
+    custom_end = request.args.get('end_date')
+    
+    date_q = {}
+    if date_filter:
+        now = now_dt()
+        today = now.date()
+        start_dt, end_dt = None, None
+        
+        if date_filter == 'yesterday':
+            yesterday = today - timedelta(days=1)
+            start_dt = datetime.combine(yesterday, datetime.min.time())
+            end_dt = datetime.combine(yesterday, datetime.max.time())
+        elif date_filter == 'this_week':
+            # Monday = 0
+            start_dt = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
+            end_dt = now
+        elif date_filter == 'last_week':
+            last_week_start = today - timedelta(days=today.weekday() + 7)
+            last_week_end = last_week_start + timedelta(days=6)
+            start_dt = datetime.combine(last_week_start, datetime.min.time())
+            end_dt = datetime.combine(last_week_end, datetime.max.time())
+        elif date_filter == 'this_month':
+            start_dt = datetime.combine(today.replace(day=1), datetime.min.time())
+            end_dt = now
+        elif date_filter == 'last_month':
+            last_month_end = today.replace(day=1) - timedelta(days=1)
+            last_month_start = last_month_end.replace(day=1)
+            start_dt = datetime.combine(last_month_start, datetime.min.time())
+            end_dt = datetime.combine(last_month_end, datetime.max.time())
+        elif date_filter == 'custom' and custom_start and custom_end:
+            try:
+                start_dt = datetime.strptime(custom_start, "%Y-%m-%d")
+                end_dt = datetime.strptime(custom_end, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+            except: pass
+
+        if start_dt and end_dt:
+            # Filter by 'created_at' field
+            date_q = {"created_at": {"$gte": start_dt, "$lte": end_dt}}
+
 
     all_items = []
     me = ObjectId(current_user.id)
@@ -675,6 +727,8 @@ def view_tasks():
         if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
             q["$or"] = [{"user_id": me}, {"assigned_to": me}]
         if filter_status: q["status"] = filter_status
+        if date_q: q.update(date_q) # Apply date filter
+        
         tasks = list(db.tasks.find(q))
         for t in tasks:
             if search and not (search in (t.get('todo_content') or '').lower() or search in (t.get('customer_name') or '').lower()): continue
@@ -689,10 +743,17 @@ def view_tasks():
         if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
             q["assigned_to"] = {"$in": [me]}
         if filter_status: q["status"] = filter_status
-        # ✅ FIX: Enable department filter for Corp Tasks
-        if filter_department: q["department"] = filter_department
+        # ✅ FIX: Enable department filter for Corp Tasks (Support Multi-Dept)
+        if filter_department: 
+            q["$or"] = [
+                {"department": filter_department}, # Backward compat
+                {"departments": filter_department} # New multi-dept
+            ]
+        if date_q: q.update(date_q) # Apply date filter
+
         ctasks = list(db.corp_tasks.find(q))
         for t in ctasks:
+            # ✅ Allow searching by multiple departments text
             if search and not (search in (t.get('title') or '').lower() or search in (t.get('department') or '').lower()): continue
             t['kind'] = 'corp'
             t['todo_content'] = t.get('title')
@@ -704,8 +765,13 @@ def view_tasks():
     # 3. Personal Tasks
     if not filter_type or filter_type == 'personal':
          q = {}
-         if current_user.role not in [SUPERADMIN_ROLE, 'admin']: q["user_id"] = me # ✅ Personal tasks are always user-specific
+         # ✅ STRICT PRIVACY: Only show tasks where user_id is CURRENT USER.
+         # Removed "if role not admin" condition.
+         q["user_id"] = me 
+         
          if filter_status: q["status"] = filter_status
+         if date_q: q.update(date_q) # Apply date filter
+
          ptasks = list(db.personal_tasks.find(q))
          for t in ptasks:
             if search and not (search in (t.get('title') or '').lower()): continue
@@ -726,6 +792,8 @@ def view_tasks():
             ]
         if filter_department: q["department"] = filter_department
         if filter_status: q["status"] = filter_status
+        if date_q: q.update(date_q) # Apply date filter
+
         dtasks = list(db.department_tasks.find(q))
         for t in dtasks:
             if search and not (search in (t.get('title') or '').lower() or search in (t.get('department') or '').lower()): continue
@@ -749,13 +817,30 @@ def view_tasks():
         if filter_status: q["status"] = filter_status
         # ✅ User can only see requests they sent or are assigned to (if requests had assignees)
         if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
-            q["sender_name"] = current_user.username # Assuming sender_name is current_user.username
+            # ✅ UPDATED: Filter by sender OR assignee (Check both single and list)
+            q["$or"] = [
+                {"sender_name": current_user.username},
+                {"assigned_to": me},
+                {"assigned_to": {"$in": [me]}}, # Handle list format
+                {"assignee": current_user.username} # Fallback
+            ]
+        
+        if date_q: q.update(date_q) # Apply date filter
+
         reqs = list(db.customer_requests.find(q))
         for r in reqs:
             r['kind'] = 'request'
             r['todo_content'] = r.get('content')
             r['context_label'] = r.get('customer_name')
-            r['assignee'] = r.get('sender_name')
+            
+            # ✅ UPDATED: Handle Multiple Assignees for Request in Display
+            if 'assignees' not in r: r['assignees'] = [r.get('assignee')] if r.get('assignee') else []
+            
+            # Prefer assignee if set, else sender (fallback)
+            if not r['assignees']:
+                r['assignees'] = [r.get('sender_name')] if r.get('sender_name') else []
+
+            r['assignee'] = r['assignees'][0] if r['assignees'] else '---'
             r['due_at'] = None
             
             # ✅ Migration Logic for Display: Old Status -> Note
@@ -767,18 +852,35 @@ def view_tasks():
 
             all_items.append(r)
 
-    # Sort Logic
+    # ✅ UPDATED SORT LOGIC: Priority User's Created/Assigned Tasks
     def get_is_mine(t):
+        # 1. Personal is always mine
         if t.get('kind') == 'personal': return True
+        
+        # 2. Check Assignment (OID)
         assigned = t.get('assigned_to')
-        if not assigned: return False
-        if isinstance(assigned, list): return me in assigned
-        return assigned == me
+        if isinstance(assigned, list):
+            if me in assigned: return True
+        elif assigned == me:
+            return True
+            
+        # 3. Check Creator (Username or OID)
+        # Normal tasks use user_id
+        if t.get('user_id') == me: return True
+        # Corp/Dept/Request use username string for creator
+        if t.get('assigned_by') == current_user.username: return True
+        if t.get('sender_name') == current_user.username: return True
+        
+        return False
 
+    # 1. Base: Time (Newest first)
     all_items.sort(key=lambda x: x.get('updated_at') or datetime.min, reverse=True)
-    all_items.sort(key=lambda x: not get_is_mine(x))
+    # 2. Status: Active above Done/Cancelled
     all_items.sort(key=lambda x: x.get('status') in ['done', 'cancelled'])
-    all_items.sort(key=lambda x: x.get('status') == 'overdue', reverse=True) # Overdue first
+    # 3. Priority: Overdue above Normal
+    all_items.sort(key=lambda x: x.get('status') == 'overdue', reverse=True)
+    # 4. ULTIMATE PRIORITY: My Tasks (Created or Assigned) at TOP
+    all_items.sort(key=lambda x: get_is_mine(x), reverse=True)
     
     # ✅ FIX: Include Department in users_list for frontend validation
     users_list = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
@@ -870,6 +972,28 @@ def update_task_detail(id):
         if request.is_json: return jsonify({"status": "error", "message": "Task not found"}), 404
         return redirect(url_for('view_tasks'))
 
+    # ✅ Permission Check for Update (Safety)
+    me = ObjectId(current_user.id)
+    has_perm = False
+    if col_name == 'personal_tasks':
+         if task.get('user_id') == me: has_perm = True
+    elif current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
+    elif col_name == 'tasks' and (task.get('user_id') == me or task.get('assigned_to') == me): has_perm = True
+    elif col_name == 'corp_tasks':
+        assigned = task.get('assigned_to', [])
+        if isinstance(assigned, list) and me in assigned: has_perm = True
+        elif assigned == me: has_perm = True
+    elif col_name == 'department_tasks':
+        assigned = task.get('assigned_to', [])
+        if isinstance(assigned, list) and me in assigned: has_perm = True
+        elif assigned == me: has_perm = True
+    elif col_name == 'customer_requests': has_perm = True
+    
+    if not has_perm:
+         if request.is_json: return jsonify({"status": "error", "message": "Forbidden"}), 403
+         return redirect(url_for('view_tasks'))
+
+
     if request.is_json:
         data = request.get_json()
         upd = {"updated_at": now_dt()}
@@ -913,16 +1037,23 @@ def quick_update_task(id):
     
     # ✅ Permission Check for quick update
     has_perm = False
-    if current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
-    elif col == 'personal_tasks' and t.get('user_id') == ObjectId(current_user.id): has_perm = True
-    elif col == 'tasks' and (t.get('user_id') == ObjectId(current_user.id) or t.get('assigned_to') == ObjectId(current_user.id)): has_perm = True
+    me = ObjectId(current_user.id)
+    
+    # 1. Personal Task: STRICT OWNER ONLY
+    if col == 'personal_tasks':
+        if t.get('user_id') == me: has_perm = True
+        
+    # 2. Other Tasks: Admin/Superadmin OK
+    elif current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
+    elif col == 'tasks' and (t.get('user_id') == me or t.get('assigned_to') == me): has_perm = True
     elif col == 'corp_tasks':
          assigned = t.get("assigned_to", [])
-         if isinstance(assigned, ObjectId) and assigned == ObjectId(current_user.id): has_perm = True
-         elif isinstance(assigned, list) and ObjectId(current_user.id) in assigned: has_perm = True
+         if isinstance(assigned, ObjectId) and assigned == me: has_perm = True
+         elif isinstance(assigned, list) and me in assigned: has_perm = True
     elif col == 'department_tasks': # ✅ NEW: Department task permission
-         if isinstance(assigned, ObjectId) and assigned == ObjectId(current_user.id): has_perm = True
-         elif isinstance(assigned, list) and ObjectId(current_user.id) in assigned: has_perm = True
+         assigned = t.get("assigned_to", [])
+         if isinstance(assigned, ObjectId) and assigned == me: has_perm = True
+         elif isinstance(assigned, list) and me in assigned: has_perm = True
     elif col == 'customer_requests': has_perm = True # Allow all to update requests for now
     
     if not has_perm: return jsonify({"status": "error", "message": "Forbidden"}), 403
@@ -954,31 +1085,43 @@ def view_task_detail_page(id):
     
     # ✅ Redirect to Request Detail if it's a request (uses request_detail.html)
     if col_name == 'customer_requests':
-        return render_template('request_detail.html', req=task, request_statuses=REQUEST_STATUSES, business_types=BUSINESS_TYPES, statuses=UNIFIED_STATUSES)
+        return redirect(url_for('view_customer_request_detail', id=id))
 
     task['is_normal_task'] = (col_name == 'tasks')
-    if col_name == 'corp_tasks':
+    if col_name == 'tasks':
+        task['kind'] = 'customer' # ✅ Explicitly set kind
+    elif col_name == 'corp_tasks':
+        task['kind'] = 'corp' # ✅ Explicitly set kind
         task.update({'todo_content': task.get('title'), 'customer_name': task.get('department','Corp'), 'assignee': ", ".join(task.get('assignees', [])) or "---"})
     elif col_name == 'department_tasks': # ✅ NEW: Department task detail mapping
+        task['kind'] = 'department' # ✅ Explicitly set kind
         task['is_department_task'] = True
         task.update({'todo_content': task.get('title'), 'customer_name': task.get('department','Corp'), 'assignee': ", ".join(task.get('assignees', [])) or "---"})
     elif col_name == 'personal_tasks':
+        task['kind'] = 'personal' # ✅ Explicitly set kind
         task.update({'todo_content': task.get('title'), 'customer_name': "Personal Task", 'assignee': "Me"})
     
     # Permission Check
     me = ObjectId(current_user.id)
     has_perm = False
-    if current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
+    
+    # 1. Personal Task: STRICT OWNER ONLY
+    if col_name == 'personal_tasks':
+        if task.get('user_id') == me: has_perm = True
+        
+    # 2. Other Tasks: Admin/Superadmin OK
+    elif current_user.role in [SUPERADMIN_ROLE, 'admin']: has_perm = True
     elif col_name == 'tasks' and (task.get('user_id') == me or task.get('assigned_to') == me): has_perm = True
-    elif col_name == 'personal_tasks' and task.get('user_id') == me: has_perm = True
     elif col_name == 'corp_tasks':
         assigned = task.get('assigned_to', [])
         if isinstance(assigned, list) and me in assigned: has_perm = True
         elif assigned == me: has_perm = True
-    elif col_name == 'department_tasks': # ✅ NEW: Department task detail permission
+    elif col_name == 'department_tasks': # ✅ NEW: Department task detail permission logic
         assigned = task.get('assigned_to', [])
         if isinstance(assigned, list) and me in assigned: has_perm = True
         elif assigned == me: has_perm = True
+        # ✅ NEW: Allow members of the same department to view detail (Context: Team Visibility)
+        elif current_user.role in ['admin', 'user'] and current_user.department == task.get('department'): has_perm = True
             
     if not has_perm: return redirect(url_for('view_tasks'))
     return render_template('task_detail.html', task=task, statuses=UNIFIED_STATUSES)
@@ -1000,13 +1143,19 @@ def delete_task(id):
 
     # Generic Delete Logic
     can_delete = False
-    if current_user.role in [SUPERADMIN_ROLE, "admin"]: 
-        can_delete = True
-    elif col == 'personal_tasks': 
+    me = ObjectId(current_user.id)
+
+    # 1. Personal Task: STRICT OWNER ONLY
+    if col == 'personal_tasks': 
+        if t.get('user_id') == me:
+            can_delete = True
+            
+    # 2. Other Tasks: Admin/Superadmin OK
+    elif current_user.role in [SUPERADMIN_ROLE, "admin"]: 
         can_delete = True
     elif col == 'tasks':
         # Normal task: creator can delete unless assigned by admin
-        if t.get("user_id") == ObjectId(current_user.id) and t.get("assigned_by_role") != "admin":
+        if t.get("user_id") == me and t.get("assigned_by_role") != "admin":
             can_delete = True
     elif col == 'customer_requests':
         # Only admin deletes requests usually, or maybe creator? Let's stick to admin for now based on requests_customer.html
@@ -1113,7 +1262,17 @@ def add_corp_task():
     # Tạo ID ngẫu nhiên cho task
     cid = 'corp_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     title = (request.form.get('title') or '').strip()
-    department = request.form.get('department')
+    
+    # ✅ FIX: Handle Multiple Departments
+    departments = request.form.getlist('departments')
+    
+    # If using select (old UI fallback or single choice), get 'department' string
+    single_dept = request.form.get('department')
+    if not departments and single_dept:
+        departments = [single_dept]
+        
+    # Join for display compatibility: "Vận Hành, Marketing"
+    department_display = ", ".join(departments)
     
     # LẤY DANH SÁCH NGƯỜI ĐƯỢC GÁN (Mở cho tất cả các Role)
     assigned_user_ids = request.form.getlist('assigned_user_ids') # ✅ Can be empty
@@ -1127,7 +1286,7 @@ def add_corp_task():
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
     # Kiểm tra dữ liệu đầu vào
-    if not title or department not in CORP_DEPARTMENTS or not due_at:
+    if not title or not departments or not due_at:
         flash('Thiếu thông tin hoặc phòng ban không hợp lệ', 'danger')
         return redirect(url_for('view_tasks'))
 
@@ -1151,7 +1310,8 @@ def add_corp_task():
     db.corp_tasks.insert_one({
         "id": cid,
         "title": title,
-        "department": department,
+        "departments": departments,       # ✅ Array for filtering
+        "department": department_display, # ✅ String for display compatibility
         "assigned_to": [u["_id"] for u in users], # Lưu mảng OID
         "assignees": assignees,                   # Lưu mảng tên để hiển thị nhanh
         "assignee": assignees[0] if assignees else '---', # Primary assignee for display
@@ -1172,7 +1332,7 @@ def add_corp_task():
     msg_text = (
         f"🔔 <b>NEW TASK ASSIGNED</b>\n\n"
         f"📝 <b>Content:</b> {title}\n"
-        f"🏢 <b>Dept:</b> {department}\n"
+        f"🏢 <b>Depts:</b> {department_display}\n"
         f"👤 <b>By:</b> {current_user.username}\n"
         f"📅 <b>Deadline:</b> {due_at.strftime('%H:%M %d/%m/%Y')}"
     )
@@ -1242,7 +1402,14 @@ def update_corp_task(id):
         return redirect(url_for('view_tasks'))
 
     title = (request.form.get('title') or '').strip()
-    department = request.form.get('department')
+    
+    # ✅ FIX: Handle Multiple Departments for Update
+    departments = request.form.getlist('departments')
+    single_dept = request.form.get('department')
+    if not departments and single_dept:
+        departments = [single_dept]
+    department_display = ", ".join(departments)
+
     due_at = parse_due_at(request.form.get('due_at') or request.form.get('deadline'))
 
     # ✅ NEW: Assignment logic based on role for updates
@@ -1270,7 +1437,8 @@ def update_corp_task(id):
 
     upd = {
         "title": title,
-        "department": department,
+        "departments": departments,       # ✅ Array
+        "department": department_display, # ✅ String
         "assigned_to": assigned_to_oids,
         "assignees": assignees,
         "due_at": due_at,
@@ -1408,6 +1576,34 @@ def add_department_task():
     flash('Đã tạo task phòng ban thành công', 'success')
     return redirect(url_for('view_tasks'))
 
+# ✅ NEW: Department Task Telegram Notification
+@app.route('/department-task/send-telegram/<id>', methods=['POST'])
+@login_required
+def department_manual_send_telegram(id):
+    t = db.department_tasks.find_one({"id": id})
+    if not t: return jsonify({"status": "not_found"}), 404
+    
+    assigned_to = t.get("assigned_to", [])
+    if isinstance(assigned_to, ObjectId): assigned_to = [assigned_to]
+    
+    users = list(db.users.find({"_id": {"$in": assigned_to}}))
+    count = 0
+    msg_text = (
+        f"🔔 <b>TASK REMINDER</b>\n\n"
+        f"📝 <b>Content:</b> {t.get('title')}\n"
+        f"🏢 <b>Dept:</b> {t.get('department')}\n"
+        f"👤 <b>By:</b> {t.get('assigned_by')}\n"
+        f"📅 <b>Deadline:</b> {t.get('due_at').strftime('%H:%M %d/%m/%Y') if t.get('due_at') else 'None'}"
+    )
+    
+    for u in users:
+        if u.get("telegram_chat_id"):
+            if send_telegram_notification(u.get("telegram_chat_id"), msg_text): count += 1
+    
+    if count > 0: flash(f"Đã gửi thông báo đến {count} người.", "success")
+    else: flash("Không tìm thấy Telegram ID của người nhận.", "warning")
+    return redirect(url_for('view_tasks'))
+
 @app.route('/department-task/update/<id>', methods=['POST'])
 @login_required
 def update_department_task(id):
@@ -1473,6 +1669,18 @@ def add_customer_request():
             elif s == 'Warehouse': business_type = "Warehouse"
             elif s == 'Express': business_type = "Express"
 
+    # ✅ NEW: Handle Assignee Checklist
+    assigned_user_ids = request.form.getlist('assigned_user_ids')
+    assigned_to = []
+    assignees = []
+    
+    if assigned_user_ids:
+        try:
+            users = list(db.users.find({"_id": {"$in": [ObjectId(uid) for uid in assigned_user_ids]}}))
+            assigned_to = [u["_id"] for u in users]
+            assignees = [u.get("username", "user") for u in users]
+        except: pass
+
     rid = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     
     db.customer_requests.insert_one({
@@ -1486,11 +1694,14 @@ def add_customer_request():
         "business_type": business_type,
         "created_at": now_dt(),
         "assigned_by": current_user.username,
-        "sender_name": current_user.username
+        "sender_name": current_user.username,
+        "assigned_to": assigned_to, # ✅ List[ObjectId]
+        "assignees": assignees,      # ✅ List[str]
+        "assignee": assignees[0] if assignees else None
     })
     
     flash("Đã tạo yêu cầu mới", "success")
-    return redirect(url_for("view_customer_requests"))
+    return redirect(url_for("view_tasks", type='request')) # ✅ Redirect to tasks view
 
 @app.route('/request/customer/detail/<id>')
 @login_required
@@ -1501,12 +1712,16 @@ def view_customer_request_detail(id):
         flash("Request not found", "danger")
         return redirect(url_for("view_customer_requests"))
         
+    # ✅ FIX: Pass full user objects for checklist, not just names
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
+    
     return render_template(
         'request_detail.html', 
         req=req,
         request_statuses=REQUEST_STATUSES,
         business_types=BUSINESS_TYPES,
-        statuses=UNIFIED_STATUSES
+        statuses=UNIFIED_STATUSES,
+        users_list=users_list # ✅ Pass list of user dicts
     )
 
 @app.route('/request/customer/update/<id>', methods=['POST'])
@@ -1537,6 +1752,22 @@ def update_customer_request(id):
     if 'business_type' in data:
         if data['business_type'] in BUSINESS_TYPES:
             upd['business_type'] = data['business_type']
+            
+    # ✅ NEW: Update Result
+    if 'result' in data:
+        upd['result'] = data['result']
+
+    # ✅ NEW: Update Assignee (Checklist List)
+    if 'assigned_user_ids' in data:
+        ids = data['assigned_user_ids']
+        if isinstance(ids, list):
+            try:
+                users = list(db.users.find({"_id": {"$in": [ObjectId(uid) for uid in ids]}}))
+                upd['assigned_to'] = [u["_id"] for u in users]
+                upd['assignees'] = [u["username"] for u in users]
+                # Fallback single assignee for legacy compat
+                upd['assignee'] = users[0]["username"] if users else None
+            except: pass
 
     db.customer_requests.update_one({"id": id}, {"$set": upd})
     return jsonify({"status": "success"})
@@ -1757,8 +1988,11 @@ def admin_user_detail(user_id):
     task_q = {"assigned_to": uid}
     tasks = list(db.tasks.find(task_q).sort("updated_at", -1))
     
-    ptask_q = {"user_id": uid}
-    personal_tasks = list(db.personal_tasks.find(ptask_q).sort("updated_at", -1))
+    # ✅ STRICT PRIVACY: Only show personal tasks if viewing own profile
+    personal_tasks = []
+    if uid == ObjectId(current_user.id):
+         ptask_q = {"user_id": uid}
+         personal_tasks = list(db.personal_tasks.find(ptask_q).sort("updated_at", -1))
     
     corp_q = {"assigned_to": {"$in": [uid]}}
     corp_tasks = list(db.corp_tasks.find(corp_q).sort("updated_at", -1))

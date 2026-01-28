@@ -232,8 +232,8 @@
             <i class="bi bi-kanban"></i><span class="nav-text">All Tasks</span>
         </a>
 
-        <!-- TOOLS
-        <div class="parent-item" id="tools-toggle">
+        <!-- TOOLS -->
+        <!-- <div class="parent-item" id="tools-toggle">
             <span class="nav-text">TOOLS</span>
             <i class="bi bi-chevron-right parent-arrow" id="tools-arrow"></i>
         </div>
@@ -242,8 +242,9 @@
             <i class="bi bi-calculator"></i><span class="nav-text">Pricing Tool</span>
         </a> -->
 
-        <!-- OPERATIONS -->
-        {% if current_user.role in ['admin', 'superadmin'] %}
+        <!-- OPERATIONS (BROADCAST) -->
+        <!-- ✅ FIX: Allow User/Admin/Superadmin -->
+        {% if current_user.role in ['admin', 'superadmin', 'user'] %}
         <div class="parent-item" id="ops-toggle">
             <span class="nav-text">OPERATIONS</span>
             <i class="bi bi-chevron-right parent-arrow" id="ops-arrow"></i>

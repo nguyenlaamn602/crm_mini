@@ -53,7 +53,8 @@
         </div>
     </div>
 
-    <!-- ✅ TEAM PERFORMANCE CHART -->
+    <!-- ✅ TEAM PERFORMANCE CHART - HIDDEN FOR USERS -->
+    {% if current_user.role in ['superadmin', 'admin'] %}
     <div class="card border-0 shadow-sm rounded-4 mb-4">
         <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="fw-bold mb-0">📊 Team Task Performance</h5>
@@ -84,6 +85,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 <!-- ✅ Telegram Modal -->
@@ -138,13 +140,17 @@
     let myTeamChart = null;
 
     document.addEventListener("DOMContentLoaded", function() {
-        // Initial Render: Show All
-        renderChart(SERVER_DATA);
+        // Initial Render: Show All (Only if chart exists i.e. user is admin)
+        if (document.getElementById('teamTaskChart')) {
+            renderChart(SERVER_DATA);
+        }
     });
 
     // ✅ Hàm vẽ biểu đồ (Tái sử dụng cho Filter)
     function renderChart(dataToRender) {
         const ctxElement = document.getElementById('teamTaskChart');
+        if (!ctxElement) return; // Exit if element doesn't exist (user role)
+
         const noDataEl = document.getElementById('noDataMessage');
 
         // Check No Data

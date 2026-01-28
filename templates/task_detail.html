@@ -67,8 +67,9 @@
                             
                             <!-- Display Logic for Context -->
                             {% if task.is_department_task %}
+                                <!-- Department Task uses customer_name mapped to department in backend -->
                                 <div class="fw-semibold text-secondary">
-                                    {{ task.department or '---' }}
+                                    {{ task.department or task.customer_name or '---' }}
                                 </div>
                             {% elif task.is_normal_task and current_user.role in ['superadmin', 'admin'] %}
                                 <!-- EDITABLE NAME if Normal Task & Admin -->
@@ -78,7 +79,7 @@
                                     {{ task.customer_name or 'Unknown' }}
                                 </div>
                             {% else %}
-                                <!-- Read-only for others -->
+                                <!-- Read-only for others (Corp/Normal) -->
                                 <div class="fw-semibold text-dark">
                                     {{ task.customer_name or '---' }}
                                 </div>

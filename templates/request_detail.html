@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+{% block title %}Request Detail - {{ req.customer_name }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('view_tasks') }}?type=request" class="text-decoration-none text-secondary small fw-bold">
+                <i class="bi bi-arrow-left me-1"></i> Back to Tasks
+            </a>
+            <h3 class="fw-bold mt-2 mb-0 text-dark">Request Details</h3>
+            <span class="text-muted small">ID: {{ req.id }}</span>
+        </div>
+        
+        <!-- Quick Status Actions (Unified) -->
+        <div>
+            {% set s_display = req.status if req.status in statuses else 'todo' %}
+            <div class="dropdown">
+              <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
+                     {% if s_display == 'todo' %}btn-secondary
+                     {% elif s_display == 'doing' %}btn-warning text-white
+                     {% elif s_display == 'done' %}btn-success
+                     {% elif s_display == 'overdue' %}btn-danger
+                     {% elif s_display == 'cancelled' %}btn-dark
+                     {% endif %}"
+                     type="button" data-bs-toggle="dropdown">
+                {{ s_display|upper }}
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2">
+                {% for s in statuses %}
+                    <li>
+                        <button class="dropdown-item rounded-2" onclick="updateDetailStatus('{{ req.id }}', '{{ s }}')">
+                            {{ s|upper }}
+                        </button>
+                    </li>
+                {% endfor %}
+              </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Left Column: Main Info -->
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm rounded-4 h-100">
+                <div class="card-body p-4">
+                    <h5 class="fw-bold text-muted mb-3 text-uppercase small">
+                        Request Content <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                    </h5>
+                    <!-- EDITABLE CONTENT -->
+                    <div id="content" 
+                         class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2"
+                         onclick="makeEditable(this, 'content', 'textarea')">
+                        {{ req.content }}
+                    </div>
+
+                    <!-- RESULT FIELD -->
+                    <h5 class="fw-bold text-muted mb-3 text-uppercase small mt-4">
+                        Result / Outcome <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                    </h5>
+                    <div id="result" 
+                         class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2 bg-light border"
+                         onclick="makeEditable(this, 'result', 'textarea')">
+                        {{ req.result or '---' }}
+                    </div>
+
+                    <hr class="text-muted opacity-25">
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">
+                                Customer <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                            </label>
+                            <div id="customer_name" 
+                                 class="fw-semibold fs-5 editable-field p-1 rounded-2 text-primary"
+                                 onclick="makeEditable(this, 'customer_name', 'text')">
+                                {{ req.customer_name or 'Unknown' }}
+                            </div>
+                            {% if req.customer_psid %}
+                                <a href="/customer/{{ req.customer_psid }}" class="text-decoration-none small text-muted">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i> View Profile
+                                </a>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">Sender / App</label>
+                            <div class="d-flex align-items-center mt-1">
+                                <span class="badge rounded-pill bg-light text-dark border me-2">{{ req.app }}</span>
+                                <span class="fw-medium">{{ req.sender_name }}</span>
+                            </div>
+                        </div>
+
+                        <!-- ✅ NEW: ASSIGNEE (CHECKLIST MODAL) -->
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">
+                                Assignee <span class="badge bg-light text-secondary border rounded-pill ms-1 clickable-badge" data-bs-toggle="modal" data-bs-target="#editAssigneeModal"><i class="bi bi-pencil-fill"></i> Edit</span>
+                            </label>
+                            <div class="d-flex align-items-center mt-2 flex-wrap gap-1">
+                                {% if req.assignees and req.assignees|length > 0 %}
+                                    {% for name in req.assignees %}
+                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">
+                                            {{ name }}
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    {% if req.assignee and req.assignee != '---' %}
+                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">{{ req.assignee }}</span>
+                                    {% else %}
+                                        <span class="text-muted small">Unassigned</span>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- NOTE (Old Status) -->
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">
+                                Note (Process Status) <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                            </label>
+                            <div id="note" 
+                                 class="fw-bold fs-5 editable-field p-1 rounded-2 text-dark"
+                                 onclick='makeEditable(this, "note", "select", {{ request_statuses | tojson | safe }})'>
+                                {{ req.note or '---' }}
+                            </div>
+                        </div>
+
+                        <!-- BUSINESS TYPE -->
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">
+                                Business Type <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                            </label>
+                            <div id="business_type" 
+                                 class="fw-medium fs-5 editable-field p-1 rounded-2 text-dark"
+                                 onclick='makeEditable(this, "business_type", "select", {{ business_types | tojson | safe }})'>
+                                {{ req.business_type or 'New' }}
+                            </div>
+                        </div>
+
+                        <div class="col-md-12">
+                            <label class="small text-muted fw-bold">Created At</label>
+                            <div class="text-muted">
+                                {{ req.created_at.strftime('%H:%M %d/%m/%Y') if req.created_at else '---' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Actions -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm rounded-4 bg-light">
+                <div class="card-body p-4">
+                    <h6 class="fw-bold text-dark mb-3">Actions</h6>
+                    <div class="d-grid gap-2">
+                        {% if current_user.role in ['superadmin', 'admin'] %}
+                        <form action="/request/customer/delete/{{ req.id }}" method="POST" onsubmit="return confirm('Permanently delete this request?')">
+                            <button class="btn btn-outline-danger w-100 rounded-pill">Delete Request</button>
+                        </form>
+                        {% else %}
+                        <button class="btn btn-outline-secondary w-100 rounded-pill" disabled>No Actions Available</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ✅ MODAL: EDIT ASSIGNEES -->
+<div class="modal fade" id="editAssigneeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-2 px-3">
+                <h6 class="modal-title fw-bold"><i class="bi bi-people me-2"></i>Update Assignees</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-2" style="max-height: 300px; overflow-y: auto;">
+                    {% for u in users_list %}
+                    <div class="form-check p-2 border-bottom">
+                        <input class="form-check-input ms-1" type="checkbox" id="chk_{{ u._id }}" 
+                               value="{{ u._id }}" 
+                               {% if u._id in (req.assigned_to if req.assigned_to is iterable and req.assigned_to is not string else []) %}checked{% endif %}>
+                        <label class="form-check-label ms-2 stretched-link" for="chk_{{ u._id }}">
+                            {{ u.username }}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer border-0 bg-light p-2">
+                <button type="button" class="btn btn-primary btn-sm w-100 rounded-pill" onclick="saveAssignees()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .editable-field { cursor: pointer; transition: all 0.2s ease; border: 1px solid transparent; }
+    .editable-field:hover { background-color: #f8f9fa; border-color: #dee2e6; }
+    .clickable-badge { cursor: pointer; transition: opacity 0.2s; }
+    .clickable-badge:hover { opacity: 0.8; }
+    @keyframes flash-success { 0% { background-color: #d1e7dd; } 100% { background-color: transparent; } }
+    .flash-saved { animation: flash-success 1s ease-out; }
+</style>
+
+<script>
+    let isEditing = false;
+    const REQ_ID = "{{ req.id }}";
+
+    function makeEditable(element, fieldName, type, options = []) {
+        if (isEditing) return;
+        isEditing = true;
+        const currentValue = element.innerText.trim();
+        let input;
+
+        if (type === 'textarea') {
+            input = document.createElement('textarea');
+            input.rows = 4;
+            input.value = currentValue === '---' ? '' : currentValue;
+            input.className = 'form-control shadow-sm';
+            input.addEventListener('blur', () => saveField(element, fieldName, input.value));
+        } else if (type === 'select') {
+            input = document.createElement('select');
+            input.className = 'form-select shadow-sm fw-bold';
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                option.text = opt;
+                if (opt === currentValue || (currentValue === '---' && (opt === 'Request' || opt === '---'))) option.selected = true;
+                input.appendChild(option);
+            });
+            input.addEventListener('change', () => input.blur());
+            input.addEventListener('blur', () => saveField(element, fieldName, input.value));
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentValue === '---' ? '' : currentValue;
+            input.className = 'form-control shadow-sm';
+            input.addEventListener('blur', () => saveField(element, fieldName, input.value));
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+        }
+
+        element.innerHTML = '';
+        element.appendChild(input);
+        input.focus();
+    }
+
+    async function saveField(element, fieldName, value) {
+        let displayValue = value;
+        if (value.trim() === '') displayValue = '---';
+        element.innerHTML = displayValue;
+        isEditing = false;
+
+        try {
+            const payload = {};
+            payload[fieldName] = value;
+            const res = await fetch(`/request/customer/update/${REQ_ID}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                element.classList.add('flash-saved');
+                setTimeout(() => element.classList.remove('flash-saved'), 1000);
+            } else { alert("Failed to save."); }
+        } catch (e) { console.error(e); alert("Network error."); }
+    }
+
+    async function saveAssignees() {
+        const checkboxes = document.querySelectorAll('#editAssigneeModal input[type="checkbox"]:checked');
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        
+        try {
+            const res = await fetch(`/request/customer/update/${REQ_ID}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                body: JSON.stringify({ assigned_user_ids: ids })
+            });
+            
+            if (res.ok) {
+                window.location.reload();
+            } else {
+                alert("Failed to update assignees.");
+            }
+        } catch(e) { console.error(e); alert("Network Error"); }
+    }
+
+    async function updateDetailStatus(reqId, newStatus) {
+        try {
+            const formData = new FormData();
+            formData.append('status', newStatus);
+            const res = await fetch(`/task/quick-update/${reqId}`, {
+                method: 'POST',
+                body: formData,
+                headers: {'X-Requested-With': 'XMLHttpRequest'}
+            });
+            const data = await res.json();
+            if (data.status === 'success') window.location.reload();
+            else alert('Failed to update status.');
+        } catch(e) { console.error(e); alert('Error'); }
+    }
+</script>
+{% endblock %}

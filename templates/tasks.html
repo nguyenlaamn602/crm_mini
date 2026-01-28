@@ -35,11 +35,12 @@
                 <i class="bi bi-person-vcard me-1"></i> + Customer
               </button>
               
-              <!-- ✅ FIX: Allow EVERYONE to add Corp Task -->
+              {% if current_user.role == 'superadmin' %}
               <button class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm fw-medium"
                       data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
                 <i class="bi bi-building me-1"></i> + Corp
               </button>
+              {% endif %}
 
               <button class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm fw-medium"
                       data-bs-toggle="modal" data-bs-target="#addPersonalTaskModal">
@@ -50,33 +51,59 @@
                 <i class="bi bi-chat-left-dots me-1"></i> + Request
           </button>
           
-          <!-- ✅ FIX: Allow EVERYONE to add Dept Task -->
+          {% if current_user.role in ['superadmin', 'admin'] %}
           <button class="btn btn-outline-success btn-sm rounded-pill px-3 shadow-sm"
                   data-bs-toggle="modal" data-bs-target="#addDepartmentTaskModal">
             <i class="bi bi-building-fill-gear me-1"></i> + Department
           </button>
+          {% endif %}
           </div>
       </div>
 
       <!-- FILTER FORM WITH BIG CARDS -->
-      <form action="/tasks" method="GET">
+      <form action="/tasks" method="GET" id="filterForm">
         
         <!-- Search & Status Row -->
-        <div class="d-flex justify-content-between gap-3 mb-3">
-             <select name="status" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" onchange="this.form.submit()" style="width: 150px;">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+             <!-- Status Filter -->
+             <select name="status" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" onchange="this.form.submit()" style="width: 140px;">
                 <option value="">All Statuses</option>
                 {% for s in statuses %}
                 <option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s|upper }}</option>
                 {% endfor %}
             </select>
-            <select name="department" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" onchange="this.form.submit()" style="width: 180px;">
+
+            <!-- Department Filter -->
+            <select name="department" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" onchange="this.form.submit()" style="width: 160px;">
                 <option value="">All Departments</option>
                 {% for d in department_task_departments %}
                 <option value="{{ d }}" {% if request.args.get('department') == d %}selected{% endif %}>{{ d }}</option>
                 {% endfor %}
             </select>
+
+            <!-- ✅ DATE FILTER -->
+            <select name="date_filter" id="dateFilterSelect" class="form-select form-select-sm bg-light border-0 rounded-pill px-3" style="width: 150px;" onchange="handleDateChange(this)">
+                <option value="">All Dates</option>
+                <option value="yesterday" {% if request.args.get('date_filter') == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                <option value="this_week" {% if request.args.get('date_filter') == 'this_week' %}selected{% endif %}>This Week</option>
+                <option value="last_week" {% if request.args.get('date_filter') == 'last_week' %}selected{% endif %}>Last Week</option>
+                <option value="this_month" {% if request.args.get('date_filter') == 'this_month' %}selected{% endif %}>This Month</option>
+                <option value="last_month" {% if request.args.get('date_filter') == 'last_month' %}selected{% endif %}>Last Month</option>
+                <option value="custom" {% if request.args.get('date_filter') == 'custom' %}selected{% endif %}>Custom Range</option>
+            </select>
+
+            <!-- ✅ CUSTOM DATE INPUTS (Hidden by default) -->
+            <div id="customDateBox" class="{% if request.args.get('date_filter') == 'custom' %}d-flex{% else %}d-none{% endif %} align-items-center gap-1 bg-light rounded-pill px-2 py-1 border">
+                <input type="date" name="start_date" class="form-control form-control-sm border-0 bg-transparent p-0 ps-1" style="width: 110px;" value="{{ request.args.get('start_date','') }}">
+                <span class="small text-muted">-</span>
+                <input type="date" name="end_date" class="form-control form-control-sm border-0 bg-transparent p-0" style="width: 110px;" value="{{ request.args.get('end_date','') }}">
+                <button type="submit" class="btn btn-sm btn-primary rounded-circle p-0 d-flex align-items-center justify-content-center shadow-sm" style="width:24px;height:24px" title="Apply Date Filter">
+                    <i class="bi bi-arrow-right-short"></i>
+                </button>
+            </div>
             
-            <div class="input-group input-group-sm bg-light rounded-pill px-3 py-1 border-0" style="width: 300px;">
+            <!-- Search Box -->
+            <div class="input-group input-group-sm bg-light rounded-pill px-3 py-1 border-0 ms-auto" style="width: 250px;">
                 <span class="input-group-text border-0 bg-transparent text-muted"><i class="bi bi-search"></i></span>
                 <input type="text" name="search" class="form-control border-0 bg-transparent"
                     placeholder="Search content, dept..." value="{{ request.args.get('search', '') }}">
@@ -230,7 +257,17 @@
                 <span class="fw-bold text-dark" style="font-size: 0.95rem;">
                   {{ t.todo_content }}
                 </span>
-                <span class="text-muted small">
+                
+                {# ✅ NEW: DISPLAY RESULT FOR REQUESTS #}
+                {% if t.kind == 'request' and t.result %}
+                <div class="mt-1">
+                    <span class="small text-success fw-bold bg-success-subtle px-2 py-0 rounded-1">
+                        <i class="bi bi-check-circle me-1"></i>Result: {{ t.result }}
+                    </span>
+                </div>
+                {% endif %}
+
+                <span class="text-muted small mt-1">
                   Created by {{ t.assigned_by or 'System' }} 
                   {% if t.created_at %} • {{ t.created_at.strftime('%d/%m') }}{% endif %}
                 </span>
@@ -258,7 +295,11 @@
 
             <td>
                {% if t.note %}
-                 <span class="badge bg-warning-subtle text-dark border border-warning-subtle">{{ t.note }}</span>
+                 <span class="badge bg-warning-subtle text-dark border border-warning-subtle d-inline-block text-truncate" 
+                       style="max-width: 150px;" 
+                       title="{{ t.note }}">
+                    {{ t.note }}
+                 </span>
                {% endif %}
             </td>
 
@@ -274,14 +315,17 @@
 
             <td>
               <div class="d-flex align-items-center">
-                 {% if (t.kind == 'corp' or t.kind == 'department') and t.assignees|length > 1 %}
-                    <span class="badge bg-light text-dark border rounded-pill">{{ t.assignees|length }} Users</span>
+                 {# ✅ Updated Logic to show multiple assignees count if > 1 #}
+                 {% if t.assignees and t.assignees|length > 1 %}
+                    <span class="badge bg-light text-dark border rounded-pill" title="{{ ', '.join(t.assignees) }}">
+                        {{ t.assignees|length }} Users
+                    </span>
                  {% else %}
                     <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2"
                          style="width: 26px; height: 26px; font-size: 0.75rem; font-weight: bold;">
                       {{ t.assignee[0].upper() if t.assignee and t.assignee != '---' else '?' }}
                     </div>
-                    <span class="small">{{ t.assignee }}</span>
+                    <span class="small text-truncate" style="max-width: 100px;">{{ t.assignee }}</span>
                  {% endif %}
               </div>
             </td>
@@ -332,8 +376,6 @@
                   </li>
                   
                   {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
-                  {# Rule: Personal tasks (own) -> Delete. Admin/Superadmin -> Delete. Others (User viewing non-personal) -> Request Delete #}
-                  
                   {% set is_own_personal = (t.kind == 'personal' and t.user_id|string == current_user.id|string) %}
                   {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
                   
@@ -345,7 +387,6 @@
                           </form>
                       </li>
                   {% else %}
-                      <!-- User viewing Non-Personal (Corp/Dept/Customer) -> Request Delete -->
                       <li><hr class="dropdown-divider"></li>
                       <li>
                           <button class="dropdown-item text-warning rounded-2" onclick="openRequestDeleteModal('{{ t.id }}')">
@@ -427,14 +468,20 @@
                         <label class="form-label fw-bold text-muted small">TITLE / CONTENT</label>
                         <textarea name="title" class="form-control rounded-3" rows="2" required></textarea>
                     </div>
+                    
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
-                        <select name="department" class="form-select rounded-3">
+                        <label class="form-label fw-bold text-muted small">DEPARTMENTS</label>
+                        <div class="border rounded-3 p-2 bg-light" style="max-height:150px; overflow-y:auto;">
                             {% for d in corp_departments %}
-                            <option value="{{ d }}">{{ d }}</option>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="departments" value="{{ d }}" id="c_dept_{{ loop.index }}">
+                                <label class="form-check-label" for="c_dept_{{ loop.index }}">{{ d }}</label>
+                            </div>
                             {% endfor %}
-                        </select>
+                        </div>
+                        <div class="form-text text-muted small">Select one or more departments.</div>
                     </div>
+                    
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
                         <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
@@ -500,7 +547,7 @@
     </div>
 </div>
 
-{# --- MODAL 4: ADD REQUEST (Merged) --- #}
+{# --- MODAL 4: ADD REQUEST (Updated for Checklist Assignee) --- #}
 <div class="modal fade" id="addRequestModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -518,6 +565,20 @@
                         <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
                         <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
                     </div>
+                    
+                    {# ✅ NEW: ASSIGNEE CHECKLIST IN ADD REQUEST #}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
+                        <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                            {% for u in users_list %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="req_assign_{{ u._id }}">
+                                <label class="form-check-label small" for="req_assign_{{ u._id }}">{{ u.username }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-muted small">NOTE (Old Status)</label>
@@ -563,7 +624,6 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
                         
-                        <!-- ✅ FIX: Superadmin gets Select, others get Read-only -->
                         {% if current_user.role == 'superadmin' %}
                             <select name="department" class="form-select rounded-3">
                                 {% for d in department_task_departments %}
@@ -582,7 +642,6 @@
                         <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
                             {% for u in users_list %}
                             <div class="form-check">
-                                <!-- Check Logic: Admin disabled if not same dept (unless Superadmin). -->
                                 <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="d_assign_{{ u._id }}"
                                 {% if current_user.role != 'superadmin' and u.department != current_user.department %}disabled{% endif %}
                                 {% if u._id|string == current_user.id|string %}checked{% endif %}>
@@ -614,7 +673,6 @@
 </div>
 
 <script>
-    // Add form validation for department task assignees
     document.getElementById('addDepartmentTaskModal').addEventListener('submit', function(e) {
         const assignedCheckboxes = this.querySelectorAll('input[name="assigned_user_ids"]:checked:not(:disabled)');
         if (assignedCheckboxes.length === 0) {
@@ -622,6 +680,18 @@
             alert('Please select at least one assignee for the department task.');
         }
     });
+
+    function handleDateChange(select) {
+        const customBox = document.getElementById('customDateBox');
+        if (select.value === 'custom') {
+            customBox.classList.remove('d-none');
+            customBox.classList.add('d-flex');
+        } else {
+            customBox.classList.add('d-none');
+            customBox.classList.remove('d-flex');
+            select.form.submit();
+        }
+    }
 </script>
 
 {# --- MODAL 5: REQUEST DELETE (GENERIC) --- #}
@@ -647,7 +717,6 @@
 </div>
 
 <style>
-/* Custom utility for active card rings */
 .ring-2 {
     box-shadow: 0 0 0 4px rgba(0,0,0,0.05);
     transform: translateY(-2px);

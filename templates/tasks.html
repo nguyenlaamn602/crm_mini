@@ -35,12 +35,11 @@
                 <i class="bi bi-person-vcard me-1"></i> + Customer
               </button>
               
-              {% if current_user.role == 'superadmin' %}
+              <!-- ✅ FIX: Mở nút Corp Task cho tất cả User -->
               <button class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm fw-medium"
                       data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
                 <i class="bi bi-building me-1"></i> + Corp
               </button>
-              {% endif %}
 
               <button class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm fw-medium"
                       data-bs-toggle="modal" data-bs-target="#addPersonalTaskModal">
@@ -49,14 +48,13 @@
               <button class="btn btn-outline-warning btn-sm rounded-pill px-3 shadow-sm fw-medium text-dark"
                       data-bs-toggle="modal" data-bs-target="#addRequestModal">
                 <i class="bi bi-chat-left-dots me-1"></i> + Request
-          </button>
+              </button>
           
-          {% if current_user.role in ['superadmin', 'admin'] %}
-          <button class="btn btn-outline-success btn-sm rounded-pill px-3 shadow-sm"
-                  data-bs-toggle="modal" data-bs-target="#addDepartmentTaskModal">
-            <i class="bi bi-building-fill-gear me-1"></i> + Department
-          </button>
-          {% endif %}
+              <!-- ✅ FIX: Mở nút Department Task cho tất cả User -->
+              <button class="btn btn-outline-success btn-sm rounded-pill px-3 shadow-sm"
+                      data-bs-toggle="modal" data-bs-target="#addDepartmentTaskModal">
+                <i class="bi bi-building-fill-gear me-1"></i> + Department
+              </button>
           </div>
       </div>
 
@@ -258,7 +256,7 @@
                   {{ t.todo_content }}
                 </span>
                 
-                {# ✅ NEW: DISPLAY RESULT FOR REQUESTS #}
+                {# DISPLAY RESULT FOR REQUESTS #}
                 {% if t.kind == 'request' and t.result %}
                 <div class="mt-1">
                     <span class="small text-success fw-bold bg-success-subtle px-2 py-0 rounded-1">
@@ -315,7 +313,7 @@
 
             <td>
               <div class="d-flex align-items-center">
-                 {# ✅ Updated Logic to show multiple assignees count if > 1 #}
+                 {# Display multiple assignees count if > 1 #}
                  {% if t.assignees and t.assignees|length > 1 %}
                     <span class="badge bg-light text-dark border rounded-pill" title="{{ ', '.join(t.assignees) }}">
                         {{ t.assignees|length }} Users
@@ -359,7 +357,7 @@
                     </a>
                   </li>
                   <li>
-                    <!-- ✅ FIX: DEPT TASK TELEGRAM -->
+                    <!-- DEPT TASK TELEGRAM -->
                     {% if t.kind == 'department' %}
                         <form action="/department-task/send-telegram/{{ t.id }}" method="POST" class="m-0">
                              <button class="dropdown-item rounded-2"><i class="bi bi-telegram me-2 text-primary"></i>Notify Dept</button>
@@ -375,7 +373,7 @@
                     {% endif %}
                   </li>
                   
-                  {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
+                  {# LOGIC: DELETE vs REQUEST DELETE #}
                   {% set is_own_personal = (t.kind == 'personal' and t.user_id|string == current_user.id|string) %}
                   {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
                   
@@ -406,7 +404,7 @@
   </div>
 </div>
 
-{# --- RESTORED MODALS (100% Original Logic) --- #}
+{# --- MODALS --- #}
 
 {# --- MODAL 1: CUSTOMER TASK --- #}
 <div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
@@ -547,7 +545,7 @@
     </div>
 </div>
 
-{# --- MODAL 4: ADD REQUEST (Updated for Checklist Assignee) --- #}
+{# --- MODAL 4: ADD REQUEST --- #}
 <div class="modal fade" id="addRequestModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
@@ -566,7 +564,7 @@
                         <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
                     </div>
                     
-                    {# ✅ NEW: ASSIGNEE CHECKLIST IN ADD REQUEST #}
+                    {# ASSIGNEE CHECKLIST IN ADD REQUEST #}
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
                         <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
@@ -694,7 +692,7 @@
     }
 </script>
 
-{# --- MODAL 5: REQUEST DELETE (GENERIC) --- #}
+{# --- MODAL 6: REQUEST DELETE (GENERIC) --- #}
 <div class="modal fade" id="requestDeleteModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-sm">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">

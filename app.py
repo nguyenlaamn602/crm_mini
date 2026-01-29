@@ -63,8 +63,8 @@ USER_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "CSKH/Sale", "Nhâ
 CORP_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"]
 DEPARTMENT_TASK_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"] # Same as corp for now
 
-# ✅ UNIFIED STATUSES (Gộp status)
-UNIFIED_STATUSES = ["todo", "doing", "done", "overdue", "cancelled"]
+# ✅ UNIFIED STATUSES (Gộp status) - Added "waiting"
+UNIFIED_STATUSES = ["todo", "waiting", "doing", "done", "overdue", "cancelled"]
 
 # ✅ NEW: Customer Request Constants
 REQUEST_STATUSES = ["Request", "Thanh toán", "Lên đơn", "Trouble"]
@@ -203,12 +203,20 @@ def can_user_quick_update(task_doc):
 
 def allowed_next_status(task_doc):
     if is_overdue(task_doc) and task_doc.get("status") != "done": return "overdue"
-    if task_doc.get("status") == "todo": return "doing"
+    if task_doc.get("status") == "todo": return "waiting"
+    if task_doc.get("status") == "waiting": return "doing"
     if task_doc.get("status") == "doing": return "done"
     return "todo" # Default or cycle back
 
 def next_personal_status(cur):
-    if cur == "todo": return "doing"
+    if cur == "todo": return "waiting"
+    if cur == "waiting": return "doing"
+    if cur == "doing": return "done"
+    return "todo"
+
+def get_next_status(cur):
+    if cur == "todo": return "waiting"
+    if cur == "waiting": return "doing"
     if cur == "doing": return "done"
     return "todo"
 
@@ -344,34 +352,35 @@ def sync_pancake_conversation_for_customer(customer):
 # ✅ UNIFIED AUTO OVERDUE LOGIC (Replacing individual functions)
 def auto_scan_overdue_tasks():
     now = now_dt()
+    active_statuses = ["todo", "waiting", "doing", "Not_yet"]
     
     # 1. Normal Tasks (Customer Tasks)
     db.tasks.update_many(
-        {"status": {"$in": ["todo", "doing", "Not_yet"]}, "due_at": {"$lt": now}},
+        {"status": {"$in": active_statuses}, "due_at": {"$lt": now}},
         {"$set": {"status": "overdue", "missed_at": now, "updated_at": now, "missed_notify_pending": True}}
     )
     
     # 2. Corp Tasks
     db.corp_tasks.update_many(
-        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}},
+        {"status": {"$in": ["todo", "waiting", "doing"]}, "due_at": {"$lt": now}},
         {"$set": {"status": "overdue", "updated_at": now}}
     )
     
     # 3. Personal Tasks
     db.personal_tasks.update_many(
-        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}},
+        {"status": {"$in": ["todo", "waiting", "doing"]}, "due_at": {"$lt": now}},
         {"$set": {"status": "overdue", "updated_at": now, "missed_notify_pending": True}}
     )
     
     # 4. Department Tasks
     db.department_tasks.update_many(
-        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}},
+        {"status": {"$in": ["todo", "waiting", "doing"]}, "due_at": {"$lt": now}},
         {"$set": {"status": "overdue", "updated_at": now}}
     )
     
     # 5. Customer Requests
     db.customer_requests.update_many(
-        {"status": {"$in": ["todo", "doing"]}, "due_at": {"$lt": now}}, # Note: Requests usually have no due_at, but if added
+        {"status": {"$in": ["todo", "waiting", "doing"]}, "due_at": {"$lt": now}}, # Note: Requests usually have no due_at, but if added
         {"$set": {"status": "overdue", "updated_at": now}}
     )
 
@@ -934,35 +943,49 @@ def add_task():
             
     return redirect(url_for('view_tasks'))
 
-# ✅ NEW: Route gửi Telegram thủ công cho Normal Task
+# ✅ UNIFIED MANUAL SEND TELEGRAM
 @app.route('/task/send-telegram/<id>', methods=['POST'])
 @login_required
 def task_manual_send_telegram(id):
-    t = db.tasks.find_one({"id": id})
+    """Gửi Telegram thủ công cho bất kỳ loại task/request nào"""
+    t, col = find_any_task(id)
     if not t: return jsonify({"status": "not_found"}), 404
     
-    assigned_to = t.get("assigned_to")
-    target_user = None
+    # Lấy danh sách người nhận (Hỗ trợ cả mảng OID và OID đơn lẻ)
+    assigned_to = t.get("assigned_to", [])
+    if isinstance(assigned_to, ObjectId): assigned_to = [assigned_to]
     
-    if assigned_to:
-        target_user = db.users.find_one({"_id": assigned_to})
-
-    if target_user and target_user.get("telegram_chat_id"):
-        msg_text = (
-            f"🔔 <b>TASK REMINDER</b>\n\n"
-            f"📝 <b>Content:</b> {t.get('todo_content')}\n"
-            f"👤 <b>Customer:</b> {t.get('customer_name') or 'N/A'}\n"
-            f"👤 <b>By:</b> {t.get('assigned_by') or 'Unknown'}\n"
-            f"📅 <b>Deadline:</b> {t.get('due_at').strftime('%H:%M %d/%m/%Y') if t.get('due_at') else 'None'}"
-        )
-        if send_telegram_notification(target_user.get("telegram_chat_id"), msg_text):
-            flash(f"Đã gửi thông báo đến {target_user.get('username')}.", "success")
-        else:
-            flash("Gửi thất bại. Kiểm tra Bot.", "danger")
+    # Nếu không có assigned_to, thử dùng user_id (cho personal task)
+    if not assigned_to and t.get("user_id"): assigned_to = [t.get("user_id")]
+    
+    users = list(db.users.find({"_id": {"$in": assigned_to}}))
+    
+    # Nội dung thông báo linh động
+    title = t.get('todo_content') or t.get('title') or t.get('content') or 'N/A'
+    context = t.get('customer_name') or t.get('department') or 'System'
+    by_user = t.get('assigned_by') or t.get('sender_name') or 'Admin'
+    due_at = t.get('due_at')
+    
+    msg_text = (
+        f"🔔 <b>TASK REMINDER</b>\n\n"
+        f"📝 <b>Nội dung:</b> {title}\n"
+        f"👤 <b>Bối cảnh:</b> {context}\n"
+        f"👤 <b>Người giao:</b> {by_user}\n"
+        f"📅 <b>Hạn chót:</b> {due_at.strftime('%H:%M %d/%m/%Y') if due_at else 'N/A'}"
+    )
+    
+    count = 0
+    for u in users:
+        if u.get("telegram_chat_id"):
+            if send_telegram_notification(u.get("telegram_chat_id"), msg_text):
+                count += 1
+    
+    if count > 0:
+        flash(f"Đã gửi thông báo đến {count} người.", "success")
     else:
-        flash("Người được giao chưa cập nhật Telegram ID.", "warning")
+        flash("Người nhận chưa cập nhật Telegram ID hoặc lỗi Bot.", "warning")
         
-    return redirect(url_for('view_tasks'))
+    return redirect(request.referrer or url_for('view_tasks'))
 
 @app.route('/task/update/<id>', methods=['POST'])
 @login_required
@@ -1507,33 +1530,11 @@ def add_corp_task():
     flash('Đã tạo task công ty thành công', 'success')
     return redirect(url_for('view_tasks'))
 
-# ✅ MANUAL SEND TELEGRAM (Corp)
+# ✅ MANUAL SEND TELEGRAM (Corp) - Pointing to unified logic
 @app.route('/corp-task/send-telegram/<id>', methods=['POST'])
 @login_required
 def corp_manual_send_telegram(id):
-    t = db.corp_tasks.find_one({"id": id})
-    if not t: return jsonify({"status": "not_found"}), 404
-    
-    assigned_to = t.get("assigned_to", [])
-    if isinstance(assigned_to, ObjectId): assigned_to = [assigned_to]
-    
-    users = list(db.users.find({"_id": {"$in": assigned_to}}))
-    count = 0
-    msg_text = (
-        f"🔔 <b>TASK REMINDER</b>\n\n"
-        f"📝 <b>Content:</b> {t.get('title')}\n"
-        f"🏢 <b>Dept:</b> {t.get('department')}\n"
-        f"👤 <b>By:</b> {t.get('assigned_by')}\n"
-        f"📅 <b>Deadline:</b> {t.get('due_at').strftime('%H:%M %d/%m/%Y') if t.get('due_at') else 'None'}"
-    )
-    
-    for u in users:
-        if u.get("telegram_chat_id"):
-            if send_telegram_notification(u.get("telegram_chat_id"), msg_text): count += 1
-    
-    if count > 0: flash(f"Đã gửi thông báo đến {count} người.", "success")
-    else: flash("Không tìm thấy Telegram ID của người nhận.", "warning")
-    return redirect(url_for('view_tasks'))
+    return task_manual_send_telegram(id)
 
 @app.route('/corp-task/request-action/<id>', methods=['POST'])
 @login_required
@@ -1739,33 +1740,11 @@ def add_department_task():
     flash('Đã tạo task phòng ban thành công', 'success')
     return redirect(url_for('view_tasks'))
 
-# ✅ NEW: Department Task Telegram Notification
+# ✅ NEW: Department Task Telegram Notification - Pointing to unified logic
 @app.route('/department-task/send-telegram/<id>', methods=['POST'])
 @login_required
 def department_manual_send_telegram(id):
-    t = db.department_tasks.find_one({"id": id})
-    if not t: return jsonify({"status": "not_found"}), 404
-    
-    assigned_to = t.get("assigned_to", [])
-    if isinstance(assigned_to, ObjectId): assigned_to = [assigned_to]
-    
-    users = list(db.users.find({"_id": {"$in": assigned_to}}))
-    count = 0
-    msg_text = (
-        f"🔔 <b>TASK REMINDER</b>\n\n"
-        f"📝 <b>Content:</b> {t.get('title')}\n"
-        f"🏢 <b>Dept:</b> {t.get('department')}\n"
-        f"👤 <b>By:</b> {t.get('assigned_by')}\n"
-        f"📅 <b>Deadline:</b> {t.get('due_at').strftime('%H:%M %d/%m/%Y') if t.get('due_at') else 'None'}"
-    )
-    
-    for u in users:
-        if u.get("telegram_chat_id"):
-            if send_telegram_notification(u.get("telegram_chat_id"), msg_text): count += 1
-    
-    if count > 0: flash(f"Đã gửi thông báo đến {count} người.", "success")
-    else: flash("Không tìm thấy Telegram ID của người nhận.", "warning")
-    return redirect(url_for('view_tasks'))
+    return task_manual_send_telegram(id)
 
 @app.route('/department-task/update/<id>', methods=['POST'])
 @login_required
@@ -2353,7 +2332,7 @@ def api_admin_missed_ack():
 @login_required
 def api_admin_corp_requests(): # ✅ Admin/Superadmin can view
     # ✅ FIX: SUPERADMIN CAN VIEW REQUESTS
-    if current_user.role not in [SUPERADMIN_ROLE, "admin"]: return jsonify({"items": []})
+    if current_user.role not in [SUPERADMIN_ROLE, 'admin']: return jsonify({"items": []})
     reqs = list(db.corp_tasks.find({"admin_request": {"$ne": None}}))
     return jsonify({"items": [{"id": r.get("id"), "title": r.get("title"), "request_type": r.get("admin_request"), "reason": r.get("request_reason"), "user": r.get("request_by")} for r in reqs]})
 

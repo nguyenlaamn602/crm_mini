@@ -19,6 +19,7 @@
             <div class="dropdown">
               <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
                      {% if s_display == 'todo' %}btn-secondary
+                     {% elif s_display == 'waiting' %}btn-info text-white
                      {% elif s_display == 'doing' %}btn-warning text-white
                      {% elif s_display == 'done' %}btn-success
                      {% elif s_display == 'overdue' %}btn-danger
@@ -194,6 +195,13 @@
                 <div class="card-body p-4">
                     <h6 class="fw-bold text-dark mb-3">Actions</h6>
                     <div class="d-grid gap-2">
+                        <!-- ✅ NEW: NOTIFY ASSIGNEES BUTTON -->
+                        <form action="/task/send-telegram/{{ req.id }}" method="POST" class="m-0">
+                            <button type="submit" class="btn btn-primary w-100 rounded-pill mb-2">
+                                <i class="bi bi-telegram me-1"></i> Notify Assignees
+                            </button>
+                        </form>
+
                         {% if current_user.role in ['superadmin', 'admin'] %}
                         <form action="/request/customer/delete/{{ req.id }}" method="POST" onsubmit="return confirm('Permanently delete this request?')">
                             <button class="btn btn-outline-danger w-100 rounded-pill">Delete Request</button>

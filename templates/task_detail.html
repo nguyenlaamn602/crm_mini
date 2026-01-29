@@ -20,6 +20,7 @@
             <div class="dropdown">
               <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
                      {% if s_display == 'todo' %}btn-secondary
+                     {% elif s_display == 'waiting' %}btn-info text-white
                      {% elif s_display == 'doing' %}btn-warning text-white
                      {% elif s_display == 'done' %}btn-success
                      {% elif s_display == 'overdue' %}btn-danger
@@ -219,7 +220,7 @@
                                 <button class="btn btn-link text-danger w-100 text-decoration-none">Delete Task</button>
                             </form>
                         {% else %}
-                            <!-- User viewing Non-Personal (Corp/Dept/Customer) -> Request Delete -->
+                            <!-- User viewing Non-Personal (Corp/Normal) -> Request Delete -->
                             <button class="btn btn-link text-warning w-100 text-decoration-none" 
                                     data-bs-toggle="modal" data-bs-target="#requestDeleteModal">
                                 <i class="bi bi-exclamation-circle me-1"></i> Request Delete
@@ -506,7 +507,7 @@
                 const d = String(date.getDate()).padStart(2,'0');
                 const mo = String(date.getMonth()+1).padStart(2,'0');
                 const y = date.getFullYear();
-                displayValue = `<i class="bi bi-calendar-event me-1"></i>${h}:${m} ${d}/${mo}/${y}`;
+                displayValue = `<i class=\"bi bi-calendar-event me-1\"></i>${h}:${m} ${d}/${mo}/${y}`;
                 element.setAttribute('data-value', value);
              } else {
                  displayValue = 'Set Deadline';
@@ -575,7 +576,7 @@
         
         rows.forEach(row => {
             const userDept = row.getAttribute('data-user-dept');
-            const checkbox = row.querySelector('input[type="checkbox"]');
+            const checkbox = row.querySelector('input[type=\"checkbox\"]');
             
             if (userDept === selectedDept) {
                 row.classList.remove('d-none');
@@ -598,7 +599,7 @@
         if (targetDiv) {
             targetDiv.classList.remove('d-none');
             // Re-enable assigned_user_ids inside visible div
-            const visibleAssignees = targetDiv.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
+            const visibleAssignees = targetDiv.querySelectorAll('input[name=\"assigned_user_ids\"], select[name=\"assigned_user_ids\"]');
             visibleAssignees.forEach(el => el.disabled = false);
 
             // ✅ TRIGGER FILTER IF DEPT TYPE
@@ -610,7 +611,7 @@
         // Disable inputs in hidden fields to prevent conflict
         allFields.forEach(div => {
             if (div.id !== `fields_${val}`) {
-                 const hiddenAssignees = div.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
+                 const hiddenAssignees = div.querySelectorAll('input[name=\"assigned_user_ids\"], select[name=\"assigned_user_ids\"]');
                  hiddenAssignees.forEach(el => el.disabled = true);
             }
         });

@@ -68,22 +68,13 @@
                             {% endif %}
                         </td>
                         <td>
-                            <!-- ✅ ONLY SUPERADMIN CAN CHANGE DEPT DIRECTLY -->
-                            {% if current_user.role == 'superadmin' %}
-                            <form action="/admin/user/update_department/{{ user.id }}" method="POST" onclick="event.stopPropagation()">
-                                <select name="department" class="form-select form-select-sm border-0 bg-light rounded-pill" onchange="this.form.submit()" style="width: 140px;">
-                                    <option value="">-- No Dept --</option>
-                                    {% if not user.department %}
-                                        <option value="" selected>-- None --</option>
-                                    {% endif %}
-                                    
-                                    {% for dept in departments %}
-                                        <option value="{{ dept }}" {% if user.department == dept %}selected{% endif %}>{{ dept }}</option>
-                                    {% endfor %}
-                                </select>
-                            </form>
+                            <!-- ✅ Display multiple departments -->
+                            {% if user.departments %}
+                                {% for dept in user.departments %}
+                                    <span class="badge bg-light text-dark border me-1 mb-1">{{ dept }}</span>
+                                {% endfor %}
                             {% else %}
-                                <span class="badge bg-light text-dark border">{{ user.department or 'None' }}</span>
+                                <span class="badge bg-light text-muted border">-- None --</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
@@ -128,7 +119,7 @@
                 <h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Add New User</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form action="/admin/user/add" method="POST">
+            <form action="/admin/user/add" method="POST" id="addUserForm">
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">USERNAME</label>
@@ -141,19 +132,25 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
                         
-                        <!-- ✅ Admin locked to their department, Superadmin can choose -->
-                        {% if current_user.role == 'superadmin' %}
-                        <select name="department" class="form-select rounded-3">
-                            <option value="">-- Select Department --</option>
-                            {% for dept in departments %}
-                                <option value="{{ dept }}">{{ dept }}</option>
-                            {% endfor %}
-                        </select>
-                        {% else %}
-                        <input type="text" class="form-control rounded-3" value="{{ current_user.department }}" disabled>
-                        <input type="hidden" name="department" value="{{ current_user.department }}">
-                        <div class="form-text text-muted">Admin chỉ được thêm user vào phòng ban của mình.</div>
-                        {% endif %}
+                        <!-- ✅ Changed to Checklist for consistent UI -->
+                        <div class="border rounded-3 p-3 bg-light" style="max-height: 200px; overflow-y: auto;">
+                            {% if current_user.role == 'superadmin' %}
+                                {% for dept in departments %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}" id="add_u_dept_{{ loop.index }}">
+                                    <label class="form-check-label" for="add_u_dept_{{ loop.index }}">{{ dept }}</label>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                {% for dept in current_user.departments %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}" id="add_u_dept_{{ loop.index }}">
+                                    <label class="form-check-label" for="add_u_dept_{{ loop.index }}">{{ dept }}</label>
+                                </div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        <div class="form-text text-muted small mt-1">Chọn một hoặc nhiều phòng ban cho người dùng mới.</div>
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
@@ -165,17 +162,29 @@
     </div>
 </div>
 
-<!-- Script to auto-dismiss alerts -->
+<!-- Script to auto-dismiss alerts and form validation -->
 <script>
     document.addEventListener("DOMContentLoaded", function() {
+        // Auto-dismiss alerts
         setTimeout(function() {
             var alerts = document.querySelectorAll('.alert');
             alerts.forEach(function(alert) {
-                // Use Bootstrap's alert instance to close
                 var bsAlert = new bootstrap.Alert(alert);
                 bsAlert.close();
             });
-        }, 1500); // 1.5 seconds
+        }, 1500);
+
+        // Client-side check for at least one department
+        const addUserForm = document.getElementById('addUserForm');
+        if (addUserForm) {
+            addUserForm.addEventListener('submit', function(e) {
+                const checkboxes = this.querySelectorAll('input[name="departments"]:checked');
+                if (checkboxes.length === 0) {
+                    e.preventDefault();
+                    alert('Vui lòng chọn ít nhất một phòng ban.');
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

@@ -59,7 +59,7 @@ LAST_SYNC_TIMESTAMP = time.time()
 # ---------------------------
 # CONSTANTS: Departments + Status
 # ---------------------------
-USER_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "CSKH/Sale", "Nhân sự"]
+USER_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "CSKH/Sale", "Nhân sự", "Ngoại Giao"]
 CORP_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"]
 DEPARTMENT_TASK_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"] # Same as corp for now
 
@@ -298,30 +298,7 @@ def sync_all_lark_task():
         LAST_SYNC_TIMESTAMP = time.time()
     except: pass
 
-def sync_lark_tasks_task():
-    global LAST_SYNC_TIMESTAMP
-    tk = get_lark_token()
-    if not tk: return
-    try:
-        res = requests.get(f"https://open.larksuite.com/open-apis/bitable/v1/apps/{LARK_TASK_APP_TOKEN}/tables/{LARK_TASK_TABLE_ID}/records", 
-                           headers={"Authorization": f"Bearer {tk}"}, timeout=60).json()
-        for item in res.get('data', {}).get('items', []):
-            f = item.get('fields', {})
-            assignee = f.get('Chịu trách nhiệm', [])[0].get('name', '---') if f.get('Chịu trách nhiệm') else '---'
-            u_id = None
-            lu = db.users.find_one({"username": assignee})
-            if lu: u_id = lu['_id']
-            
-            raw = f.get('Time') or f.get('Deadline')
-            due_at = parse_due_at(raw) if isinstance(raw, str) else None
-            
-            db.tasks.update_one({"id": item.get('record_id')}, {"$set": {
-                "todo_content": f.get('Nội Dung Todo', ''), "status": f.get('Tình trạng', 'Not_yet'),
-                "assignee": assignee, "assigned_to": u_id, "customer_name": f.get('Tên Nhóm Khách/Khách mới', ''),
-                "due_at": due_at, "updated_at": now_dt()
-            }}, upsert=True)
-        LAST_SYNC_TIMESTAMP = time.time()
-    except: pass
+# ❌ REMOVED sync_lark_tasks_task to stop syncing customer tasks from Lark
 
 def pancake_sync_task():
     global LAST_SYNC_TIMESTAMP
@@ -390,14 +367,14 @@ def auto_scan_overdue_tasks():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        u, p, dept = request.form.get('username'), request.form.get('password'), request.form.get('department')
+        u, p, depts = request.form.get('username'), request.form.get('password'), request.form.getlist('department')
         if db.users.find_one({"username": u}): # ✅ Check for existing username
             flash('Username exists!', 'danger')
             return redirect(url_for('register'))
         role = SUPERADMIN_ROLE if db.users.count_documents({}) == 0 else 'user' # ✅ First user is superadmin
-        db.users.insert_one({"username": u, "password_hash": generate_password_hash(p), "role": role, "department": dept, "created_at": now_dt()})
+        db.users.insert_one({"username": u, "password_hash": generate_password_hash(p), "role": role, "departments": depts, "created_at": now_dt()})
         return redirect(url_for('login'))
-    return render_template('register.html', departments=USER_DEPARTMENTS)
+    return render_template('register.html', departments=USER_DEPARTMENTS) # Assumes register.html has multi-select
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -433,14 +410,14 @@ def index():
     user_query = {}
     if current_user.role == 'admin':
         # Admin: Only get users in their department
-        user_query["department"] = current_user.department
+        user_query["departments"] = {"$in": current_user.departments}
     # Superadmin gets all. User gets nothing/their own (filtered in UI)
 
     user_task_stats = []
     
     # If user is just 'user', we can optimize by skipping this heavy calc or just doing for self
     if current_user.role in [SUPERADMIN_ROLE, 'admin']:
-        all_users = list(db.users.find(user_query, {"username": 1, "_id": 1, "department": 1}))
+        all_users = list(db.users.find(user_query, {"username": 1, "_id": 1, "departments": 1}))
         
         for u in all_users:
             uid = u["_id"]
@@ -457,14 +434,14 @@ def index():
             # ✅ NEW: Department Task counts
             dept_done = db.department_tasks.count_documents({"assigned_to": {"$in": [uid, uid_str]}, "status": "done"})
             dept_not = db.department_tasks.count_documents({
-                "$or": [{"assigned_to": {"$in": [uid, uid_str]}}, {"department": u.get("department")}],
+                "$or": [{"assigned_to": {"$in": [uid, uid_str]}}, {"department": {"$in": u.get("departments", [])}}],
                 "status": {"$nin": ["done", "cancelled"]}
             })
             
             user_task_stats.append({
                 "id": str(uid),
                 "username": u.get("username", "Unknown"),
-                "department": u.get("department", "Other"),
+                "department": ", ".join(u.get("departments", []) or ["Other"]),
                 "cus_done": int(cus_done),
                 "cus_not": int(cus_not),
                 "corp_done": int(corp_done),
@@ -678,28 +655,26 @@ def add_customer_activity(psid):
 @app.route('/tasks')
 @login_required
 def view_tasks():
-    filter_type = request.args.get('type') # customer, corp, personal, department, request
+    # --- 1. GATHER FILTERS ---
+    filter_type = request.args.get('type')
     filter_status = request.args.get('status')
-    search = request.args.get('search', '').lower()
-    filter_department = request.args.get('department') # For department tasks
-
-    # ✅ DATE FILTER LOGIC
+    search = request.args.get('search', '').strip().lower()
+    filter_department = request.args.get('department')
     date_filter = request.args.get('date_filter')
     custom_start = request.args.get('start_date')
     custom_end = request.args.get('end_date')
     
+    # --- 2. PREPARE DATE QUERY ---
     date_q = {}
     if date_filter:
         now = now_dt()
         today = now.date()
         start_dt, end_dt = None, None
-        
         if date_filter == 'yesterday':
             yesterday = today - timedelta(days=1)
             start_dt = datetime.combine(yesterday, datetime.min.time())
             end_dt = datetime.combine(yesterday, datetime.max.time())
         elif date_filter == 'this_week':
-            # Monday = 0
             start_dt = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
             end_dt = now
         elif date_filter == 'last_week':
@@ -720,189 +695,123 @@ def view_tasks():
                 start_dt = datetime.strptime(custom_start, "%Y-%m-%d")
                 end_dt = datetime.strptime(custom_end, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
             except: pass
-
         if start_dt and end_dt:
-            # Filter by 'created_at' field
             date_q = {"created_at": {"$gte": start_dt, "$lte": end_dt}}
 
-
-    all_items = []
+    # --- 3. DYNAMIC QUERY BUILDER ---
     me = ObjectId(current_user.id)
 
-    # 1. Customer Tasks
-    if not filter_type or filter_type == 'customer':
-        q = {}
-        # ✅ User can only see their own customer tasks
+    def build_query(collection_name):
+        conditions = []
+        # Role-based filters
         if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
-            q["$or"] = [{"user_id": me}, {"assigned_to": me}]
-        if filter_status: q["status"] = filter_status
-        if date_q: q.update(date_q) # Apply date filter
-        
-        tasks = list(db.tasks.find(q))
-        for t in tasks:
-            if search and not (search in (t.get('todo_content') or '').lower() or search in (t.get('customer_name') or '').lower()): continue
-            t['kind'] = 'customer'
-            t['context_label'] = t.get('customer_name')
-            all_items.append(t)
+            if collection_name == 'tasks': conditions.append({"$or": [{"user_id": me}, {"assigned_to": me}]})
+            elif collection_name == 'corp_tasks': conditions.append({"assigned_to": {"$in": [me]}})
+            elif collection_name == 'department_tasks': conditions.append({"$or": [{"assigned_to": {"$in": [me]}}, {"department": {"$in": current_user.departments or []}}]})
+            elif collection_name == 'customer_requests': conditions.append({"$or": [{"sender_name": current_user.username}, {"assigned_to": me}, {"assigned_to": {"$in": [me]}}, {"assignee": current_user.username}]})
+        if collection_name == 'personal_tasks': conditions.append({"user_id": me})
 
-    # 2. Corp Tasks
-    if not filter_type or filter_type == 'corp':
-        q = {}
-        # ✅ User can only see their own corp tasks
-        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
-            q["assigned_to"] = {"$in": [me]}
-        if filter_status: q["status"] = filter_status
-        # ✅ FIX: Enable department filter for Corp Tasks (Support Multi-Dept)
-        if filter_department: 
-            q["$or"] = [
-                {"department": filter_department}, # Backward compat
-                {"departments": filter_department} # New multi-dept
-            ]
-        if date_q: q.update(date_q) # Apply date filter
+        # Common filters
+        if filter_status: conditions.append({"status": filter_status})
+        if date_q: conditions.append(date_q)
 
-        ctasks = list(db.corp_tasks.find(q))
-        for t in ctasks:
-            # ✅ Allow searching by multiple departments text
-            if search and not (search in (t.get('title') or '').lower() or search in (t.get('department') or '').lower()): continue
-            t['kind'] = 'corp'
-            t['todo_content'] = t.get('title')
-            t['context_label'] = t.get('department')
-            if 'assignees' not in t: t['assignees'] = [t.get('assignee')] if t.get('assignee') else []
-            t['assignee'] = t['assignees'][0] if t['assignees'] else '---'
-            all_items.append(t)
+        # Department filter
+        if filter_department and collection_name in ['corp_tasks', 'department_tasks']:
+            if collection_name == 'corp_tasks': conditions.append({"$or": [{"department": filter_department}, {"departments": filter_department}]})
+            else: conditions.append({"department": filter_department})
 
-    # 3. Personal Tasks
-    if not filter_type or filter_type == 'personal':
-         q = {}
-         # ✅ STRICT PRIVACY: Only show tasks where user_id is CURRENT USER.
-         # Removed "if role not admin" condition.
-         q["user_id"] = me 
-         
-         if filter_status: q["status"] = filter_status
-         if date_q: q.update(date_q) # Apply date filter
-
-         ptasks = list(db.personal_tasks.find(q))
-         for t in ptasks:
-            if search and not (search in (t.get('title') or '').lower()): continue
-            t['kind'] = 'personal'
-            t['todo_content'] = t.get('title')
-            t['context_label'] = 'Personal'
-            t['assignee'] = 'Me'
-            all_items.append(t)
-
-    # ✅ NEW: 4. Department Tasks
-    if not filter_type or filter_type == 'department':
-        q = {}
-        # ✅ Department tasks are filtered by user's department or assigned_to
-        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
-            q["$or"] = [
-                {"assigned_to": {"$in": [me]}},
-                {"department": current_user.department}
-            ]
-        if filter_department: q["department"] = filter_department
-        if filter_status: q["status"] = filter_status
-        if date_q: q.update(date_q) # Apply date filter
-
-        dtasks = list(db.department_tasks.find(q))
-        for t in dtasks:
-            if search and not (search in (t.get('title') or '').lower() or search in (t.get('department') or '').lower()): continue
-            t['kind'] = 'department'
-            t['todo_content'] = t.get('title')
-            t['customer_name'] = None # No customer for department tasks
-            t['department'] = t.get('department')
-            if 'assignees' not in t: t['assignees'] = [t.get('assignee')] if t.get('assignee') else []
-            t['assignee'] = t['assignees'][0] if t['assignees'] else '---'
-            all_items.append(t)
-
-
-    # 4. Customer Requests (Merged)
-    if not filter_type or filter_type == 'request':
-        q = {}
+        # Search filter
         if search:
-             q["$or"] = [
-                {"content": {"$regex": search, "$options": "i"}},
-                {"customer_name": {"$regex": search, "$options": "i"}}
-            ]
-        if filter_status: q["status"] = filter_status
-        # ✅ User can only see requests they sent or are assigned to (if requests had assignees)
-        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
-            # ✅ UPDATED: Filter by sender OR assignee (Check both single and list)
-            q["$or"] = [
-                {"sender_name": current_user.username},
-                {"assigned_to": me},
-                {"assigned_to": {"$in": [me]}}, # Handle list format
-                {"assignee": current_user.username} # Fallback
-            ]
+            search_regex = {"$regex": search, "$options": "i"}
+            if collection_name == 'tasks': conditions.append({"$or": [{"todo_content": search_regex}, {"customer_name": search_regex}]})
+            elif collection_name in ['corp_tasks', 'department_tasks']: conditions.append({"$or": [{"title": search_regex}, {"department": search_regex}]})
+            elif collection_name == 'personal_tasks': conditions.append({"title": search_regex})
+            elif collection_name == 'customer_requests': conditions.append({"$or": [{"content": search_regex}, {"customer_name": search_regex}]})
         
-        if date_q: q.update(date_q) # Apply date filter
+        return {"$and": conditions} if conditions else {}
 
-        reqs = list(db.customer_requests.find(q))
-        for r in reqs:
-            r['kind'] = 'request'
-            r['todo_content'] = r.get('content')
-            r['context_label'] = r.get('customer_name')
-            
-            # ✅ UPDATED: Handle Multiple Assignees for Request in Display
+    # --- 4. BUILD QUERIES & CALCULATE COUNTS ---
+    final_queries = {
+        'customer': build_query('tasks'),
+        'corp': build_query('corp_tasks'),
+        'personal': build_query('personal_tasks'),
+        'department': build_query('department_tasks'),
+        'request': build_query('customer_requests')
+    }
+    task_counts = {
+        'customer': db.tasks.count_documents(final_queries['customer']),
+        'corp': db.corp_tasks.count_documents(final_queries['corp']),
+        'personal': db.personal_tasks.count_documents(final_queries['personal']),
+        'department': db.department_tasks.count_documents(final_queries['department']),
+        'request': db.customer_requests.count_documents(final_queries['request']),
+    }
+    task_counts['all'] = sum(task_counts.values())
+
+    # --- 5. FETCH DATA FOR DISPLAY ---
+    all_items = []
+    if not filter_type or filter_type == 'customer':
+        for t in db.tasks.find(final_queries['customer']):
+            t['kind'] = 'customer'
+            all_items.append(t)
+    if not filter_type or filter_type == 'corp':
+        for t in db.corp_tasks.find(final_queries['corp']):
+            t.update({'kind': 'corp', 'todo_content': t.get('title')})
+            if 'assignees' not in t: t['assignees'] = [t.get('assignee')] if t.get('assignee') else []
+            t['assignee'] = t['assignees'][0] if t['assignees'] else '---'
+            all_items.append(t)
+    if not filter_type or filter_type == 'personal':
+        for t in db.personal_tasks.find(final_queries['personal']):
+            t.update({'kind': 'personal', 'todo_content': t.get('title'), 'assignee': 'Me'})
+            all_items.append(t)
+    if not filter_type or filter_type == 'department':
+        for t in db.department_tasks.find(final_queries['department']):
+            t.update({'kind': 'department', 'todo_content': t.get('title'), 'customer_name': None})
+            if 'assignees' not in t: t['assignees'] = [t.get('assignee')] if t.get('assignee') else []
+            t['assignee'] = t['assignees'][0] if t['assignees'] else '---'
+            all_items.append(t)
+    if not filter_type or filter_type == 'request':
+        for r in db.customer_requests.find(final_queries['request']):
+            r.update({'kind': 'request', 'todo_content': r.get('content'), 'due_at': None})
             if 'assignees' not in r: r['assignees'] = [r.get('assignee')] if r.get('assignee') else []
-            
-            # Prefer assignee if set, else sender (fallback)
-            if not r['assignees']:
-                r['assignees'] = [r.get('sender_name')] if r.get('sender_name') else []
-
+            if not r['assignees']: r['assignees'] = [r.get('sender_name')] if r.get('sender_name') else []
             r['assignee'] = r['assignees'][0] if r['assignees'] else '---'
-            r['due_at'] = None
-            
-            # ✅ Migration Logic for Display: Old Status -> Note
             if r.get('status') in REQUEST_STATUSES:
                 r['note'] = r.get('status')
-                r['status'] = 'todo' # Default unified status
+                r['status'] = 'todo'
             else:
                 r['note'] = r.get('note', '')
-
             all_items.append(r)
 
+    # --- 6. SORT RESULTS ---
     # ✅ UPDATED SORT LOGIC: Priority User's Created/Assigned Tasks
     def get_is_mine(t):
-        # 1. Personal is always mine
         if t.get('kind') == 'personal': return True
-        
-        # 2. Check Assignment (OID)
         assigned = t.get('assigned_to')
-        if isinstance(assigned, list):
-            if me in assigned: return True
-        elif assigned == me:
-            return True
-            
-        # 3. Check Creator (Username or OID)
-        # Normal tasks use user_id
+        if (isinstance(assigned, list) and me in assigned) or (assigned == me): return True
         if t.get('user_id') == me: return True
-        # Corp/Dept/Request use username string for creator
         if t.get('assigned_by') == current_user.username: return True
         if t.get('sender_name') == current_user.username: return True
-        
         return False
 
-    # 1. Base: Time (Newest first)
     all_items.sort(key=lambda x: x.get('updated_at') or datetime.min, reverse=True)
-    # 2. Status: Active above Done/Cancelled
     all_items.sort(key=lambda x: x.get('status') in ['done', 'cancelled'])
-    # 3. Priority: Overdue above Normal
     all_items.sort(key=lambda x: x.get('status') == 'overdue', reverse=True)
-    # 4. ULTIMATE PRIORITY: My Tasks (Created or Assigned) at TOP
     all_items.sort(key=lambda x: get_is_mine(x), reverse=True)
     
-    # ✅ FIX: Include Department in users_list for frontend validation
-    users_list = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
+    # --- 7. RENDER TEMPLATE ---
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1, "departments": 1}))
 
     return render_template(
         'tasks.html', 
         tasks=all_items, 
         users_list=users_list, 
         statuses=UNIFIED_STATUSES, 
-        corp_departments=CORP_DEPARTMENTS, # For corp task modal
-        department_task_departments=DEPARTMENT_TASK_DEPARTMENTS, # For department task modal
+        corp_departments=CORP_DEPARTMENTS,
+        department_task_departments=DEPARTMENT_TASK_DEPARTMENTS,
         request_statuses=REQUEST_STATUSES,
-        business_types=BUSINESS_TYPES)
+        business_types=BUSINESS_TYPES,
+        task_counts=task_counts
+    )
 
 @app.route('/task/add', methods=['POST'])
 @login_required
@@ -1180,7 +1089,9 @@ def convert_personal_task(id):
         # Handle multiple departments
         depts = request.form.getlist('departments')
         if not depts and request.form.get('department'): depts = [request.form.get('department')]
-        dept_display = ", ".join(depts) if depts else current_user.department
+        if not depts:
+            depts = current_user.departments
+        dept_display = ", ".join(depts)
 
         new_data.update({
             "id": new_id,
@@ -1196,7 +1107,12 @@ def convert_personal_task(id):
 
     elif target_type == 'department':
         new_id = 'dept_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-        dept = request.form.get('department') or current_user.department
+        dept = request.form.get('department')
+        if not dept:
+            dept = current_user.departments[0] if current_user.departments else None
+        if not dept:
+            flash("Department is required for Department Task conversion.", "danger")
+            return redirect(url_for('view_task_detail_page', id=id))
         new_data.update({
             "id": new_id,
             "title": new_title,
@@ -1285,12 +1201,12 @@ def view_task_detail_page(id):
         if isinstance(assigned, list) and me in assigned: has_perm = True
         elif assigned == me: has_perm = True
         # ✅ NEW: Allow members of the same department to view detail (Context: Team Visibility)
-        elif current_user.role in ['admin', 'user'] and current_user.department == task.get('department'): has_perm = True
+        elif current_user.role in ['admin', 'user'] and task.get('department') in current_user.departments: has_perm = True
             
     if not has_perm: return redirect(url_for('view_tasks'))
     
     # ✅ PASS ALL CONSTANTS AND USERS FOR CONVERT MODAL
-    users_list = list(db.users.find({}, {"username": 1, "_id": 1, "department": 1}))
+    users_list = list(db.users.find({}, {"username": 1, "_id": 1, "departments": 1}))
     return render_template('task_detail.html', task=task, statuses=UNIFIED_STATUSES, departments=USER_DEPARTMENTS,
                            corp_departments=CORP_DEPARTMENTS, 
                            department_task_departments=DEPARTMENT_TASK_DEPARTMENTS,
@@ -1672,21 +1588,23 @@ def add_department_task():
     # ✅ Assignment logic for department tasks
     if current_user.role == SUPERADMIN_ROLE:
         # Superadmin can assign to anyone
-        pass
+        pass # No validation needed
     elif current_user.role in ['admin', 'user']:
         # Admin AND User can only create for their own department
-        if department != current_user.department:
-            flash(f"Bạn chỉ có thể tạo task cho phòng ban của mình ({current_user.department}).", "danger")
+        if department not in current_user.departments:
+            flash(f"Bạn chỉ có thể tạo task cho các phòng ban của mình ({', '.join(current_user.departments)}).", "danger")
             return redirect(url_for('view_tasks'))
         
         # VALIDATE: All assignees must be in same department
         if assigned_user_ids:
             try:
                 user_oids = [ObjectId(uid) for uid in assigned_user_ids]
-                invalid_users = db.users.count_documents({"_id": {"$in": user_oids}, "department": {"$ne": current_user.department}})
-                if invalid_users > 0:
-                    flash("Bạn chỉ được giao task cho nhân viên trong phòng ban của mình.", "danger")
-                    return redirect(url_for('view_tasks'))
+                # Check if all assignees are in the target department
+                assignee_users = list(db.users.find({"_id": {"$in": user_oids}}))
+                for user in assignee_users:
+                    if department not in user.get('departments', []):
+                        flash(f"User {user.get('username')} không thuộc phòng ban {department}.", "danger")
+                        return redirect(url_for('view_tasks'))
             except: pass
 
         # If no assignees selected, default to self
@@ -2078,11 +1996,11 @@ def admin_users():
     # ✅ FILTER: Admin only sees users in their own department
     query = {}
     if current_user.role == 'admin':
-        query["department"] = current_user.department
+        query["departments"] = {"$in": current_user.departments}
 
     users = []
     for u in db.users.find(query):
-        uo = User(u)
+        uo = User(u) # This now has .departments
         uid = u["_id"]
         p1 = db.tasks.count_documents({"assigned_to": uid, "status": {"$ne": "Done"}})
         p2 = db.personal_tasks.count_documents({"user_id": uid, "status": {"$ne": "done"}})
@@ -2102,11 +2020,11 @@ def admin_add_user():
         
     u = request.form.get('username')
     p = request.form.get('password')
-    dept = request.form.get('department')
+    depts = request.form.getlist('departments')
     
     # ✅ VALIDATE: Admin can only add users to their department
-    if current_user.role == 'admin' and dept != current_user.department:
-        flash(f'Admin chỉ được tạo user trong phòng ban {current_user.department}', 'danger')
+    if current_user.role == 'admin' and not set(depts).issubset(set(current_user.departments)):
+        flash(f'Admin chỉ được tạo user trong các phòng ban mình quản lý.', 'danger')
         return redirect(url_for('admin_users'))
 
     if not u or not p:
@@ -2121,7 +2039,7 @@ def admin_add_user():
         "username": u,
         "password_hash": generate_password_hash(p),
         "role": "user",
-        "department": dept, # ✅ Fix: d -> dept
+        "departments": depts,
         "created_at": now_dt()
     })
     flash(f'Tạo user {u} thành công', 'success')
@@ -2139,8 +2057,8 @@ def admin_user_detail(user_id):
         return redirect(url_for('admin_users'))
     
     # ✅ VALIDATE: Admin can only see details of their dept users
-    if current_user.role == 'admin' and u.get('department') != current_user.department:
-        flash("Bạn không có quyền xem user này.", "danger")
+    if current_user.role == 'admin' and not set(u.get('departments', [])).intersection(set(current_user.departments)):
+        flash("Bạn không có quyền xem user này (không chung phòng ban).", "danger")
         return redirect(url_for('admin_users'))
 
     task_q = {"assigned_to": uid}
@@ -2155,7 +2073,7 @@ def admin_user_detail(user_id):
     corp_q = {"assigned_to": {"$in": [uid]}}
     corp_tasks = list(db.corp_tasks.find(corp_q).sort("updated_at", -1))
     
-    dept_q = {"$or": [{"assigned_to": {"$in": [uid]}}, {"department": u.get("department")}]} # ✅ NEW: Department tasks for user
+    dept_q = {"$or": [{"assigned_to": {"$in": [uid]}}, {"department": {"$in": u.get("departments", [])}}]} # ✅ NEW: Department tasks for user
     department_tasks = list(db.department_tasks.find(dept_q).sort("updated_at", -1))
 
     # Calculate Breakdown Stats for Display & Chart
@@ -2238,28 +2156,21 @@ def update_user_role(user_id):
     db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"role": request.form.get('role')}})
     return redirect(url_for('admin_users'))
 
-@app.route('/admin/user/update_department/<user_id>', methods=['POST'])
+@app.route('/admin/user/update_departments/<user_id>', methods=['POST'])
 @login_required
-def update_user_department(user_id):
+def update_user_departments(user_id):
     # ✅ RESTRICT: ONLY SUPERADMIN CAN UPDATE DEPARTMENT
     if current_user.role != SUPERADMIN_ROLE: 
         flash("Chỉ Superadmin mới có quyền đổi phòng ban.", "danger")
         return redirect(url_for('admin_users'))
 
-    target_user = db.users.find_one({"_id": ObjectId(user_id)})
-    if not target_user:
-        return redirect(url_for('admin_users'))
-
-    new_dept = request.form.get('department')
-
-    # Logic: Nếu user đã có department, không cho phép set về rỗng
-    if target_user.get('department') and not new_dept:
-        flash(f"User {target_user.get('username')} đã có phòng ban, không thể hủy bỏ!", "warning")
-    elif new_dept:
-        db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"department": new_dept}})
-        flash(f"Đã cập nhật phòng ban cho {target_user.get('username')}", "success") # ✅ Fix: u -> target_user
-
-    return redirect(url_for('admin_users'))
+    new_depts = request.form.getlist('departments')
+    db.users.update_one(
+        {"_id": ObjectId(user_id)}, 
+        {"$set": {"departments": new_depts}}
+    )
+    flash(f"Đã cập nhật phòng ban cho user.", "success")
+    return redirect(url_for('admin_user_detail', user_id=user_id))
 
 # ✅ NEW: Admin Update Telegram ID
 @app.route('/admin/user/update-telegram/<user_id>', methods=['POST'])
@@ -2346,7 +2257,7 @@ def sync_now():
     init_pancake_pages(True)
     pancake_sync_task()
     sync_all_lark_task()
-    sync_lark_tasks_task()
+    # Removed Lark Task Sync
     return redirect(request.referrer)
 
 @app.route('/webhook/lark', methods=['POST'])
@@ -2418,7 +2329,8 @@ if __name__ == '__main__':
     if not scheduler.running:
         scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', seconds=60)
         scheduler.add_job(id='l_leads', func=sync_all_lark_task, trigger='interval', seconds=60)
-        scheduler.add_job(id='l_tasks', func=sync_lark_tasks_task, trigger='interval', seconds=60)
+        
+        # ❌ REMOVED Job 'l_tasks' to stop auto-sync from Lark
         
         # ✅ Unified auto overdue scheduler
         scheduler.add_job(id='auto_overdue', func=auto_scan_overdue_tasks, trigger='interval', seconds=60)

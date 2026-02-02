@@ -36,7 +36,6 @@
                 <i class="bi bi-person-vcard me-1"></i> + Customer
               </button>
               
-              <!-- ✅ FIX: Mở nút Corp Task cho tất cả User -->
               <button class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm fw-medium"
                       data-bs-toggle="modal" data-bs-target="#addCorpTaskModal">
                 <i class="bi bi-building me-1"></i> + Corp
@@ -51,7 +50,6 @@
                 <i class="bi bi-chat-left-dots me-1"></i> + Request
               </button>
           
-              <!-- ✅ FIX: Mở nút Department Task cho tất cả User -->
               <button class="btn btn-outline-success btn-sm rounded-pill px-3 shadow-sm"
                       data-bs-toggle="modal" data-bs-target="#addDepartmentTaskModal">
                 <i class="bi bi-building-fill-gear me-1"></i> + Department
@@ -110,7 +108,7 @@
         </div>
 
         <!-- BIG CARDS FILTER ROW -->
-        <div class="row row-cols-1 row-cols-md-5 g-3">
+        <div class="row row-cols-1 row-cols-lg-6 g-3">
             
             <!-- 1. ALL TASKS -->
             <div class="col">
@@ -125,6 +123,7 @@
                                 <span class="fw-bold fs-6">All Work</span>
                                 <span class="small opacity-75">Overview</span>
                             </div>
+                            <h4 class="ms-auto fw-bolder mb-0">{{ task_counts.get('all', 0) }}</h4>
                         </div>
                     </div>
                 </button>
@@ -143,6 +142,7 @@
                                 <span class="fw-bold fs-6">Customer</span>
                                 <span class="small opacity-75">Client tasks</span>
                             </div>
+                            <h4 class="ms-auto fw-bolder mb-0">{{ task_counts.get('customer', 0) }}</h4>
                         </div>
                     </div>
                 </button>
@@ -161,6 +161,7 @@
                                 <span class="fw-bold fs-6">Corporate</span>
                                 <span class="small opacity-75">Internal ops</span>
                             </div>
+                            <h4 class="ms-auto fw-bolder mb-0">{{ task_counts.get('corp', 0) }}</h4>
                         </div>
                     </div>
                 </button>
@@ -179,6 +180,7 @@
                                 <span class="fw-bold fs-6">Personal</span>
                                 <span class="small opacity-75">Private todos</span>
                             </div>
+                            <h4 class="ms-auto fw-bolder mb-0">{{ task_counts.get('personal', 0) }}</h4>
                         </div>
                     </div>
                 </button>
@@ -197,6 +199,7 @@
                                 <span class="fw-bold fs-6">Request</span>
                                 <span class="small opacity-75">Manual reqs</span>
                             </div>
+                            <h4 class="ms-auto fw-bolder mb-0">{{ task_counts.get('request', 0) }}</h4>
                         </div>
                     </div>
                 </button>
@@ -215,6 +218,7 @@
                                 <span class="fw-bold fs-6">Department</span>
                                 <span class="small opacity-75">Team tasks</span>
                             </div>
+                            <h4 class="ms-auto fw-bolder mb-0">{{ task_counts.get('department', 0) }}</h4>
                         </div>
                     </div>
                 </button>
@@ -229,8 +233,8 @@
       <table class="table align-middle mb-0 table-hover bg-white">
         <thead class="bg-light text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.05rem;">
           <tr>
-            <th class="ps-4 py-3 text-muted">TYPE</th>
-            <th class="text-muted" style="width: 250px;">CONTENT</th>
+            <th class="ps-4 py-3 text-muted" style="width: 80px;">TYPE</th>
+            <th class="text-muted" style="width: 400px;">CONTENT</th>
             <th class="text-muted">CUSTOMER</th>
             <th class="text-muted">DEPARTMENT</th>
             <th class="text-muted">NOTE</th>
@@ -251,14 +255,12 @@
                </span>
             </td>
 
-            <td style="max-width: 250px;">
+            <td style="max-width: 350px;">
               <div class="d-flex flex-column">
-                <!-- ✅ UPDATE: Truncated Content -->
-                <span class="fw-bold text-dark d-inline-block text-truncate w-100" style="font-size: 0.95rem;" title="{{ t.todo_content }}">
+                <span class="fw-bold text-dark" style="font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; text-align: justify;" title="{{ t.todo_content }}">
                   {{ t.todo_content }}
                 </span>
                 
-                {# DISPLAY RESULT FOR REQUESTS #}
                 {% if t.kind == 'request' and t.result %}
                 <div class="mt-1">
                     <span class="small text-success fw-bold bg-success-subtle px-2 py-0 rounded-1">
@@ -268,8 +270,10 @@
                 {% endif %}
 
                 <span class="text-muted small mt-1">
-                  Created by {{ t.assigned_by or 'System' }} 
-                  {% if t.created_at %} • {{ t.created_at.strftime('%d/%m') }}{% endif %}
+                  Created by {{ t.assigned_by or 'System' }}
+                  {% if t.created_at %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1">{{ t.created_at.strftime('%d/%m') }}</span>
+                  {% endif %}
                 </span>
                 {% if t.attachment %}
                 <div class="mt-1">
@@ -281,9 +285,9 @@
               </div>
             </td>
 
-            <td>
+            <td style="max-width: 100px; min-width: 70px;">
                {% if t.customer_name %}
-                 <span class="fw-medium text-secondary">{{ t.customer_name }}</span>
+                 <span class="badge bg-light border text-secondary fw-normal d-inline-block text-truncate w-100 text-start" title="{{ t.customer_name }}">{{ t.customer_name }}</span>
                {% endif %}
             </td>
 
@@ -315,7 +319,6 @@
 
             <td>
               <div class="d-flex align-items-center">
-                 {# Display multiple assignees count if > 1 #}
                  {% if t.assignees and t.assignees|length > 1 %}
                     <span class="badge bg-light text-dark border rounded-pill" title="{{ ', '.join(t.assignees) }}">
                         {{ t.assignees|length }} Users
@@ -333,7 +336,6 @@
             <td class="text-center">
               {% set s_display = t.status if t.status in statuses else 'todo' %}
               
-                {# --- Standard Status Dropdown --- #}
               <div class="dropdown" onclick="event.stopPropagation()">
                   <button class="btn btn-sm rounded-pill px-3 border dropdown-toggle {{ status_colors.get(s_display, 'bg-light') }}"
                           type="button" data-bs-toggle="dropdown">
@@ -359,7 +361,6 @@
                     </a>
                   </li>
                   <li>
-                    <!-- DEPT TASK TELEGRAM -->
                     {% if t.kind == 'department' %}
                         <form action="/department-task/send-telegram/{{ t.id }}" method="POST" class="m-0">
                              <button class="dropdown-item rounded-2"><i class="bi bi-telegram me-2 text-primary"></i>Notify Dept</button>
@@ -375,7 +376,6 @@
                     {% endif %}
                   </li>
                   
-                  {# LOGIC: DELETE vs REQUEST DELETE #}
                   {% set is_own_personal = (t.kind == 'personal' and t.user_id|string == current_user.id|string) %}
                   {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
                   
@@ -471,24 +471,24 @@
                     
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">DEPARTMENTS</label>
-                        <div class="border rounded-3 p-2 bg-light" style="max-height:150px; overflow-y:auto;">
+                        <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
                             {% for d in corp_departments %}
-                            <div class="form-check">
+                            <div class="form-check mb-2">
                                 <input class="form-check-input" type="checkbox" name="departments" value="{{ d }}" id="c_dept_{{ loop.index }}">
                                 <label class="form-check-label" for="c_dept_{{ loop.index }}">{{ d }}</label>
                             </div>
                             {% endfor %}
                         </div>
-                        <div class="form-text text-muted small">Select one or more departments.</div>
+                        <div class="form-text text-muted small">Chọn một hoặc nhiều phòng ban.</div>
                     </div>
                     
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
-                        <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                        <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
                             {% for u in users_list %}
-                            <div class="form-check">
+                            <div class="form-check mb-2">
                                 <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="c_assign_{{ u._id }}">
-                                <label class="form-check-label" for="c_assign_{{ u._id }}">{{ u.username }}</label>
+                                <label class="form-check-label small" for="c_assign_{{ u._id }}">{{ u.username }}</label>
                             </div>
                             {% endfor %}
                         </div>
@@ -566,12 +566,11 @@
                         <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
                     </div>
                     
-                    {# ASSIGNEE CHECKLIST IN ADD REQUEST #}
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
-                        <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                        <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
                             {% for u in users_list %}
-                            <div class="form-check">
+                            <div class="form-check mb-2">
                                 <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="req_assign_{{ u._id }}">
                                 <label class="form-check-label small" for="req_assign_{{ u._id }}">{{ u.username }}</label>
                             </div>
@@ -624,28 +623,39 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
                         
-                        {% if current_user.role == 'superadmin' %}
-                            <select name="department" class="form-select rounded-3">
+                        {# ✅ Changed to Checklist for consistent UI #}
+                        <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
+                            {% if current_user.role == 'superadmin' %}
                                 {% for d in department_task_departments %}
-                                <option value="{{ d }}">{{ d }}</option>
+                                <div class="form-check mb-2">
+                                    <!-- Use radio for single selection if backend expects one, or checkbox if multiple -->
+                                    <input class="form-check-input" type="radio" name="department" value="{{ d }}" id="add_d_dept_{{ loop.index }}" required>
+                                    <label class="form-check-label small" for="add_d_dept_{{ loop.index }}">{{ d }}</label>
+                                </div>
                                 {% endfor %}
-                            </select>
-                        {% else %}
-                            <input type="text" class="form-control rounded-3" value="{{ current_user.department }}" disabled>
-                            <input type="hidden" name="department" value="{{ current_user.department }}">
-                            <div class="form-text text-muted">You can only create tasks for your department.</div>
-                        {% endif %}
-                        
+                            {% elif current_user.departments|length > 1 %}
+                                {% for d in current_user.departments %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="department" value="{{ d }}" id="add_d_dept_{{ loop.index }}" required>
+                                    <label class="form-check-label small" for="add_d_dept_{{ loop.index }}">{{ d }}</label>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="bg-white p-2 border rounded-2 small text-muted">
+                                    <i class="bi bi-info-circle me-1"></i> {{ current_user.departments[0] if current_user.departments else 'N/A' }}
+                                    <input type="hidden" name="department" value="{{ current_user.departments[0] if current_user.departments else '' }}">
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="form-text text-muted small mt-1">Select a department to assign tasks to.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">ASSIGNEES</label>
-                        <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                        <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
                             {% for u in users_list %}
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="d_assign_{{ u._id }}"
-                                {% if current_user.role != 'superadmin' and u.department != current_user.department %}disabled{% endif %}
-                                {% if u._id|string == current_user.id|string %}checked{% endif %}>
-                                <label class="form-check-label" for="d_assign_{{ u._id }}">{{ u.username }}</label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="d_assign_{{ u._id }}" {% if u._id|string == current_user.id|string %}checked{% endif %}>
+                                <label class="form-check-label small" for="d_assign_{{ u._id }}">{{ u.username }}</label>
                             </div>
                             {% endfor %}
                         </div>
@@ -674,7 +684,7 @@
 
 <script>
     document.getElementById('addDepartmentTaskModal').addEventListener('submit', function(e) {
-        const assignedCheckboxes = this.querySelectorAll('input[name=\"assigned_user_ids\"]:checked:not(:disabled)');
+        const assignedCheckboxes = this.querySelectorAll('input[name="assigned_user_ids"]:checked:not(:disabled)');
         if (assignedCheckboxes.length === 0) {
             e.preventDefault();
             alert('Please select at least one assignee for the department task.');
@@ -702,14 +712,14 @@
         <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Request Delete</h6>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <form id=\"requestDeleteForm\" method=\"POST\">
-        <div class=\"modal-body p-3\">
-          <p class=\"small text-muted mb-2\">You don't have permission to delete this task directly. Submit a request to Admin?</p>
-          <label class=\"form-label small fw-bold\">Reason:</label>
-          <textarea name=\"reason\" class=\"form-control form-control-sm\" rows=\"3\" required placeholder=\"Why delete this task?\"></textarea>
+      <form id="requestDeleteForm" method="POST">
+        <div class="modal-body p-3">
+          <p class="small text-muted mb-2">You don't have permission to delete this task directly. Submit a request to Admin?</p>
+          <label class="form-label small fw-bold">Reason:</label>
+          <textarea name="reason" class="form-control form-control-sm" rows="3" required placeholder="Why delete this task?"></textarea>
         </div>
-        <div class=\"modal-footer border-0 p-2 bg-light\">
-          <button type=\"submit\" class=\"btn btn-warning btn-sm w-100 rounded-pill\">Submit Request</button>
+        <div class="modal-footer border-0 p-2 bg-light">
+          <button type="submit" class="btn btn-warning btn-sm w-100 rounded-pill">Submit Request</button>
         </div>
       </form>
     </div>

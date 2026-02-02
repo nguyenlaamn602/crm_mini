@@ -209,8 +209,6 @@
                         {% endif %}
 
                         {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
-                        {# Rule: Personal tasks (own) -> Delete. Admin/Superadmin -> Delete. Others (User viewing non-personal) -> Request Delete #}
-                        
                         {% set is_own_personal = (task.kind == 'personal' and task.user_id|string == current_user.id|string) %}
                         {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
                         
@@ -309,11 +307,11 @@
             <div id="fields_corp" class="type-fields d-none">
                 <div class="mb-3">
                     <label class="form-label fw-bold small text-primary">DEPARTMENTS</label>
-                    <div class="border rounded-3 p-2 bg-light" style="max-height:100px; overflow-y:auto;">
+                    <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
                         {% for d in corp_departments %}
-                        <div class="form-check">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="departments" value="{{ d }}" id="conv_c_dept_{{ loop.index }}">
-                            <label class="form-check-label" for="conv_c_dept_{{ loop.index }}">{{ d }}</label>
+                            <label class="form-check-label small" for="conv_c_dept_{{ loop.index }}">{{ d }}</label>
                         </div>
                         {% endfor %}
                     </div>
@@ -321,9 +319,9 @@
                 <!-- ✅ ASSIGNEES FOR CORP (Multi Checkbox) -->
                 <div class="mb-3">
                     <label class="form-label fw-bold small text-primary">ASSIGNEES</label>
-                    <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                    <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
                         {% for u in users_list %}
-                        <div class="form-check">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="corp_assign_{{ u._id }}"
                                    {% if u._id|string == current_user.id|string %}checked{% endif %}>
                             <label class="form-check-label small" for="corp_assign_{{ u._id }}">{{ u.username }}</label>
@@ -337,20 +335,32 @@
             <div id="fields_department" class="type-fields d-none">
                 <div class="mb-3">
                     <label class="form-label fw-bold small text-success">DEPARTMENT</label>
-                    <select name="department" id="convert_dept_select" class="form-select rounded-3" onchange="filterDeptAssignees()">
-                        {% for d in department_task_departments %}
-                        <option value="{{ d }}" {% if d == current_user.department %}selected{% endif %}>{{ d }}</option>
-                        {% endfor %}
-                    </select>
+                    {# ✅ Changed to Checklist/Radio for consistency #}
+                    <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
+                        {% if current_user.role == 'superadmin' %}
+                            {% for d in department_task_departments %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="department" value="{{ d }}" id="conv_dept_val_{{ loop.index }}" onchange="filterDeptAssignees()">
+                                <label class="form-check-label small" for="conv_dept_val_{{ loop.index }}">{{ d }}</label>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            {% for d in current_user.departments %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="department" value="{{ d }}" id="conv_dept_val_{{ loop.index }}" onchange="filterDeptAssignees()">
+                                <label class="form-check-label small" for="conv_dept_val_{{ loop.index }}">{{ d }}</label>
+                            </div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
                 </div>
                 <!-- ✅ ASSIGNEES FOR DEPT (Multi Checkbox) -->
                 <div class="mb-3">
                     <label class="form-label fw-bold small text-success">ASSIGNEES</label>
-                    <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                    <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
                         {% for u in users_list %}
-                        <!-- ✅ Added data-user-dept for filtering -->
-                        <div class="form-check dept-assignee-row" data-user-dept="{{ u.department }}">
-                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="dept_assign_{{ u._id }}"
+                        <div class="form-check mb-2 dept-assignee-row" data-user-depts="{{ u.departments|join(',') }}">
+                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="dept_assign_{{ u._id }}" 
                                    {% if u._id|string == current_user.id|string %}checked{% endif %}>
                             <label class="form-check-label small" for="dept_assign_{{ u._id }}">{{ u.username }}</label>
                         </div>
@@ -369,9 +379,9 @@
                 <!-- ✅ ASSIGNEES FOR REQUEST (Multi Checkbox) -->
                 <div class="mb-3">
                     <label class="form-label fw-bold small text-warning">ASSIGNEES</label>
-                    <div class="border rounded-3 p-2" style="max-height:150px; overflow-y:auto;">
+                    <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
                         {% for u in users_list %}
-                        <div class="form-check">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="req_assign_{{ u._id }}"
                                    {% if u._id|string == current_user.id|string %}checked{% endif %}>
                             <label class="form-check-label small" for="req_assign_{{ u._id }}">{{ u.username }}</label>
@@ -507,7 +517,7 @@
                 const d = String(date.getDate()).padStart(2,'0');
                 const mo = String(date.getMonth()+1).padStart(2,'0');
                 const y = date.getFullYear();
-                displayValue = `<i class=\"bi bi-calendar-event me-1\"></i>${h}:${m} ${d}/${mo}/${y}`;
+                displayValue = `<i class="bi bi-calendar-event me-1"></i>${h}:${m} ${d}/${mo}/${y}`;
                 element.setAttribute('data-value', value);
              } else {
                  displayValue = 'Set Deadline';
@@ -568,18 +578,18 @@
 
     // ✅ Function to filter Dept Assignees based on selected Dept
     function filterDeptAssignees() {
-        const select = document.getElementById('convert_dept_select');
-        if (!select) return;
+        const checkedRadio = document.querySelector('input[name="department"]:checked');
+        if (!checkedRadio) return;
         
-        const selectedDept = select.value;
-        const rows = document.querySelectorAll('.dept-assignee-row');
+        const selectedDept = checkedRadio.value;
+        const rows = document.querySelectorAll('.dept-assignee-row'); 
         
         rows.forEach(row => {
-            const userDept = row.getAttribute('data-user-dept');
-            const checkbox = row.querySelector('input[type=\"checkbox\"]');
+            const userDepts = (row.getAttribute('data-user-depts') || '').split(',');
+            const checkbox = row.querySelector('input[type="checkbox"]');
             
-            if (userDept === selectedDept) {
-                row.classList.remove('d-none');
+            if (userDepts.includes(selectedDept)) {
+                row.classList.remove('d-none'); 
             } else {
                 row.classList.add('d-none');
                 if (checkbox) checkbox.checked = false; // Uncheck hidden users
@@ -599,7 +609,7 @@
         if (targetDiv) {
             targetDiv.classList.remove('d-none');
             // Re-enable assigned_user_ids inside visible div
-            const visibleAssignees = targetDiv.querySelectorAll('input[name=\"assigned_user_ids\"], select[name=\"assigned_user_ids\"]');
+            const visibleAssignees = targetDiv.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
             visibleAssignees.forEach(el => el.disabled = false);
 
             // ✅ TRIGGER FILTER IF DEPT TYPE
@@ -611,7 +621,7 @@
         // Disable inputs in hidden fields to prevent conflict
         allFields.forEach(div => {
             if (div.id !== `fields_${val}`) {
-                 const hiddenAssignees = div.querySelectorAll('input[name=\"assigned_user_ids\"], select[name=\"assigned_user_ids\"]');
+                 const hiddenAssignees = div.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
                  hiddenAssignees.forEach(el => el.disabled = true);
             }
         });

@@ -50,7 +50,7 @@
 
                     <!-- Role Update (ONLY SUPERADMIN) -->
                     {% if current_user.role == 'superadmin' %}
-                    <form action="/admin/user/update_role/{{ staff._id }}" method="POST" class="mb-3 text-start">
+                    <form action="/admin/user/update_role/{{ staff._id }}" method="POST" class="mb-4 text-start">
                         <label class="form-label small fw-bold text-muted">Role (Superadmin Only)</label>
                         <select name="role" class="form-select rounded-3" onchange="this.form.submit()">
                             <option value="superadmin" {% if staff.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
@@ -62,22 +62,30 @@
 
                     <!-- Department Update (ONLY SUPERADMIN) -->
                     {% if current_user.role == 'superadmin' %}
-                    <form action="/admin/user/update_department/{{ staff._id }}" method="POST" class="mb-3 text-start">
-                        <label class="form-label small fw-bold text-muted">Department</label>
-                        <select name="department" class="form-select rounded-3" onchange="this.form.submit()">
-                            <option value="">-- Unassigned --</option>
-                            {% if not staff.get('department') %}
-                                <option value="" selected>-- Unassigned --</option>
-                            {% endif %}
+                    <form action="/admin/user/update_departments/{{ staff._id }}" method="POST" class="mb-4 text-start" id="updateDeptsForm">
+                        <label class="form-label small fw-bold text-muted">Departments (Superadmin)</label>
+                        <!-- ✅ Changed to Checklist for consistent UI -->
+                        <div class="border rounded-3 p-3 bg-light mb-2" style="max-height: 200px; overflow-y: auto;">
                             {% for dept in departments %}
-                                <option value="{{ dept }}" {% if staff.get('department') == dept %}selected{% endif %}>{{ dept }}</option>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}" id="upd_dept_{{ loop.index }}"
+                                       {% if dept in staff.departments %}checked{% endif %}>
+                                <label class="form-check-label small" for="upd_dept_{{ loop.index }}">{{ dept }}</label>
+                            </div>
                             {% endfor %}
-                        </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill shadow-sm">Update Departments</button>
                     </form>
                     {% else %}
-                    <div class="mb-3 text-start">
-                        <label class="form-label small fw-bold text-muted">Department</label>
-                        <input type="text" class="form-control rounded-3" value="{{ staff.department or 'None' }}" disabled>
+                    <div class="mb-4 text-start">
+                        <label class="form-label small fw-bold text-muted">Departments</label>
+                        <div class="p-2 bg-light rounded-3 border d-flex flex-wrap gap-1">
+                            {% for dept in staff.departments %}
+                                <span class="badge bg-secondary border-0">{{ dept }}</span>
+                            {% else %}
+                                <span class="text-muted small">-- Unassigned --</span>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% endif %}
 
@@ -195,7 +203,7 @@
                                             <td class="ps-4 fw-medium">{{ t.todo_content }}</td>
                                             <td>
                                                 <span class="badge rounded-pill px-3 
-                                                    {% if t.status == 'Done' %}bg-success{% elif t.status == 'Missed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                                    {% if t.status == 'done' %}bg-success{% elif t.status == 'overdue' %}bg-danger{% else %}bg-secondary{% endif %}">
                                                     {{ t.status }}
                                                 </span>
                                             </td>
@@ -230,7 +238,7 @@
                                             <td><span class="badge bg-light text-dark border">{{ t.department }}</span></td>
                                             <td>
                                                 <span class="badge rounded-pill px-3 
-                                                    {% if t.status == 'Done' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                                                    {% if t.status == 'done' %}bg-success{% else %}bg-warning text-dark{% endif %}">
                                                     {{ t.status }}
                                                 </span>
                                             </td>
@@ -321,8 +329,6 @@
                                     <p class="text-muted small">This user has no department tasks or is not part of a department with tasks.</p>
                                 </div>
                             {% endif %}
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -342,7 +348,7 @@
             labels: ['Customer', 'Corp', 'Personal', 'Department'],
             datasets: [{
                 data: dataBreakdown,
-                backgroundColor: ['#0d6efd', '#6610f2', '#fd7e14'],
+                backgroundColor: ['#0d6efd', '#6610f2', '#fd7e14', '#198754'],
                 borderWidth: 0
             }]
         },
@@ -377,7 +383,18 @@
                 var bsAlert = new bootstrap.Alert(alert);
                 bsAlert.close();
             });
-        }, 1500); 
+        }, 1500);
+
+        const updateDeptsForm = document.getElementById('updateDeptsForm');
+        if (updateDeptsForm) {
+            updateDeptsForm.addEventListener('submit', function(e) {
+                const checkboxes = this.querySelectorAll('input[name="departments"]:checked');
+                if (checkboxes.length === 0) {
+                    e.preventDefault();
+                    alert('Vui lòng chọn ít nhất một phòng ban.');
+                }
+            });
+        }
     });
 </script>
 {% endblock %}

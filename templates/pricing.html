@@ -195,15 +195,21 @@
                 <ul class="nav nav-tabs nav-fill" id="formulaTab" role="tablist">
                     <li class="nav-item" role="presentation">
                         <button class="nav-link active" id="new-formula-tab" data-bs-toggle="tab"
-                            data-bs-target="#new-formula-pane" type="button" role="tab">Add New Formula</button>
+                            data-bs-target="#new-formula-pane" type="button" role="tab">Add Formula</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="lookup-tab" data-bs-toggle="tab" data-bs-target="#lookup-pane"
+                            type="button" role="tab">
+                            <i class="bi bi-search me-1"></i>Lookup
+                        </button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="saved-formula-tab" data-bs-toggle="tab"
-                            data-bs-target="#saved-formula-pane" type="button" role="tab">Apply Saved Formula</button>
+                            data-bs-target="#saved-formula-pane" type="button" role="tab">Saved Formulas</button>
                     </li>
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="blank-column-tab" data-bs-toggle="tab"
-                            data-bs-target="#blank-column-pane" type="button" role="tab">Add Blank Column</button>
+                            data-bs-target="#blank-column-pane" type="button" role="tab">Blank Column</button>
                     </li>
                 </ul>
                 <div class="tab-content p-4" id="formulaTabContent">
@@ -234,28 +240,6 @@
                             <label class="form-label small text-muted">Columns:</label>
                             <div class="d-flex flex-wrap gap-2" id="formula-columns"></div>
                         </div>
-                        <div class="p-3 bg-light rounded border">
-                            <h6 class="fw-bold text-secondary">Lookup from History</h6>
-                            <div class="row g-2">
-                                <div class="col-12">
-                                    <label class="form-label small">1. Select History Table</label>
-                                    <select class="form-select form-select-sm" id="lookupHistorySelect"></select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">2. Match this column (in History)</label>
-                                    <select class="form-select form-select-sm" id="lookupHistoryKey"></select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">3. Get value from this column (in History)</label>
-                                    <select class="form-select form-select-sm" id="lookupHistoryValue"></select>
-                                </div>
-                            </div>
-                            <div class="mt-2">
-                                <label class="form-label small text-muted">Click to add lookup function to
-                                    formula:</label>
-                                <div id="lookup-columns-container" class="d-flex flex-wrap gap-2"></div>
-                            </div>
-                        </div>
                         <div class="text-end mt-3">
                             <button type="button" class="btn btn-primary" id="applyFormula">Apply New Formula</button>
                         </div>
@@ -265,7 +249,56 @@
                         <p class="text-muted small">Click "Apply" to add a saved formula as a new column.</p>
                         <div id="saved-formulas-container"></div>
                     </div>
-                    <!-- Pane 3: Add Blank Column -->
+                    <!-- ✅ NEW Pane 3: Lookup from History (Simplified) -->
+                    <div class="tab-pane fade" id="lookup-pane" role="tabpanel">
+                        <p class="text-muted small mb-3">Lookup values from a historical table based on matching
+                            columns.</p>
+
+                        <!-- Step 1: New Column Name -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><span class="badge bg-primary me-2">1</span>New Column
+                                Name</label>
+                            <input type="text" class="form-control" id="lookupNewColumnName"
+                                placeholder="e.g., Old Price">
+                        </div>
+
+                        <!-- Step 2: Select History Table -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><span class="badge bg-primary me-2">2</span>Select History
+                                Table</label>
+                            <select class="form-select" id="lookupHistorySelect">
+                                <option value="">-- Select a history table --</option>
+                            </select>
+                        </div>
+
+                        <!-- Step 3: Match Column (Simplified - auto-match by name) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><span class="badge bg-primary me-2">3</span>Match
+                                Column</label>
+                            <select class="form-select" id="lookupCurrentKey">
+                                <option value="">-- Select column from current table --</option>
+                            </select>
+                            <div id="lookupMatchStatus" class="mt-2"></div>
+                            <small class="text-muted">Will auto-match with same-named column in history table.</small>
+                        </div>
+
+                        <!-- Step 4: Get Value Column -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold"><span class="badge bg-primary me-2">4</span>Get Value From
+                                (History)</label>
+                            <select class="form-select" id="lookupHistoryValue">
+                                <option value="">-- Select column to get value --</option>
+                            </select>
+                            <small class="text-muted">This column's value will be copied to the new column.</small>
+                        </div>
+
+                        <div class="text-end mt-4">
+                            <button type="button" class="btn btn-success btn-lg" id="applyLookupBtn">
+                                <i class="bi bi-search me-2"></i>Apply Lookup
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Pane 4: Add Blank Column -->
                     <div class="tab-pane fade" id="blank-column-pane" role="tabpanel">
                         <p class="text-muted small">This will add a new, empty column to your table. You can then fill
                             data manually and use the drag-to-fill handle.</p>
@@ -478,6 +511,25 @@
                 document.getElementById('btnOpenFormulaModal').disabled = false;
             }
         } catch (e) { alert("Error loading history detail."); }
+    }
+
+    // ✅ NEW: Format VND with thousand separators (1234567 -> "1.234.567")
+    function formatVND(value) {
+        if (value === null || value === undefined || value === '') return '';
+        // Remove existing separators and parse number
+        const numValue = parseFloat(String(value).replace(/[,.]/g, ''));
+        if (isNaN(numValue)) return value;
+        // Only format if >= 1000 (4+ digits)
+        if (Math.abs(numValue) < 1000) return numValue.toString();
+        // Format with dot as thousand separator (VND style)
+        return numValue.toLocaleString('vi-VN').replace(/,/g, '.');
+    }
+
+    // ✅ NEW: Check if column is a money column that should be formatted
+    function isMoneyColumn(colName) {
+        const moneyKeywords = ['cước', 'phí', 'giá', 'price', 'fee', 'cost', 'total', 'tổng'];
+        const lowerName = colName.toLowerCase();
+        return moneyKeywords.some(kw => lowerName.includes(kw));
     }
 
     /* ================= WORKFLOW ================= */
@@ -719,9 +771,7 @@
         const formulaColumnsContainer = document.getElementById('formula-columns');
 
         const lookupHistorySelect = document.getElementById('lookupHistorySelect');
-        const lookupHistoryKey = document.getElementById('lookupHistoryKey');
         const lookupHistoryValue = document.getElementById('lookupHistoryValue');
-        const lookupColumnsContainer = document.getElementById('lookup-columns-container');
 
 
         btnOpenFormulaModal.addEventListener('click', () => {
@@ -800,11 +850,34 @@
                     formulaStr = formulaStr.replace(/lookup\(\[(.*?)\]\)/g, (m, p1) => `safeNum(lookupMap.get(String(row['${p1}'])))`);
                 }
             }
-            // --- END NEW LOOKUP LOGIC ---
-
+            // ✅ UPDATED: safeNum to handle VND format (dot as thousand separator)
+            const isVNModeFormula = currentMode.toLowerCase().includes('vn');
             const safeNum = (v) => {
                 if (v === null || v === undefined) return 0;
-                const n = parseFloat(v.toString().replace(/,/g, ''));
+                let str = v.toString().trim();
+
+                // ✅ VN mode: dot is thousand separator (278.752 = 278752)
+                // Check if it's VN format: has dots but no commas, or has multiple dots
+                if (isVNModeFormula) {
+                    // If string has dots but no decimal comma, treat dots as thousand separators
+                    // 278.752 -> 278752 (VND)  
+                    // But 0.5 should remain 0.5 (actual decimal)
+                    const dotCount = (str.match(/\./g) || []).length;
+                    if (dotCount >= 1 && !str.includes(',')) {
+                        // Check if it looks like VND (number with dots as separators)
+                        // e.g., "278.752" or "1.234.567" - likely VND
+                        // e.g., "0.5" or "1.25" - likely decimal
+                        const parts = str.split('.');
+                        // If all parts after first are 3 digits, it's VND format
+                        const isVNDFormat = parts.slice(1).every(p => p.length === 3);
+                        if (isVNDFormat && parts.length > 1) {
+                            str = str.replace(/\./g, ''); // Remove all dots
+                        }
+                    }
+                }
+
+                // Standard handling: remove commas
+                const n = parseFloat(str.replace(/,/g, ''));
                 return isNaN(n) ? 0 : n;
             };
 
@@ -818,14 +891,19 @@
 
             try {
                 const func = new Function('row', 'safeNum', 'lookupMap', `return ${jsExpr}`);
+                const isVNMode = currentMode.toLowerCase().includes('vn'); // ✅ Check VN mode for rounding
                 currentData.forEach(row => {
                     try {
                         const res = func(row, safeNum, lookupMap);
                         // ✅ For pure lookup, keep raw value; for formulas, format as number
                         if (isPureLookup) {
                             row[colName] = res ?? '';
+                        } else if (typeof res === 'number' && !isNaN(res)) {
+                            // ✅ VN-WW mode: round to whole number (no decimals)
+                            // Other modes: keep 2 decimal places
+                            row[colName] = isVNMode ? Math.round(res) : res.toFixed(2);
                         } else {
-                            row[colName] = (typeof res === 'number' && !isNaN(res)) ? res.toFixed(2) : (res ?? '');
+                            row[colName] = res ?? '';
                         }
                     } catch (e) { row[colName] = "Error"; }
                 });
@@ -859,14 +937,50 @@
             document.getElementById('blankColumnName').value = '';
         });
 
-        // When a history table is selected for lookup
+        // ✅ NEW: When lookup tab is shown, populate current table columns
+        document.getElementById('lookup-tab').addEventListener('shown.bs.tab', () => {
+            const lookupCurrentKey = document.getElementById('lookupCurrentKey');
+            const lookupMatchStatus = document.getElementById('lookupMatchStatus');
+            if (lookupCurrentKey && currentData.length > 0) {
+                const currentCols = Object.keys(currentData[0]);
+                lookupCurrentKey.innerHTML = '<option value="">-- Select column from current table --</option>' +
+                    currentCols.map(c => `<option value="${c}">${c}</option>`).join('');
+            }
+            if (lookupMatchStatus) lookupMatchStatus.innerHTML = '';
+        });
+
+        // ✅ NEW: When user selects column in Step 3, check if it exists in history
+        document.getElementById('lookupCurrentKey').addEventListener('change', (e) => {
+            const selectedCol = e.target.value;
+            const statusDiv = document.getElementById('lookupMatchStatus');
+
+            if (!selectedCol) {
+                statusDiv.innerHTML = '';
+                return;
+            }
+
+            if (!lookupData || lookupData.length === 0) {
+                statusDiv.innerHTML = '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Please select history table first (Step 2)</span>';
+                return;
+            }
+
+            const historyCols = Object.keys(lookupData[0]);
+            if (historyCols.includes(selectedCol)) {
+                statusDiv.innerHTML = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Found! Column "${selectedCol}" exists in history table</span>`;
+            } else {
+                statusDiv.innerHTML = `<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Not Found! Column "${selectedCol}" does not exist in history table</span>`;
+            }
+        });
+
+        // When a history table is selected for lookup (uses variables from line 765-767)
         lookupHistorySelect.addEventListener('change', async (e) => {
             const historyId = e.target.value;
             lookupData = null;
-            lookupHistoryKey.innerHTML = '';
-            lookupHistoryValue.innerHTML = '';
-            lookupColumnsContainer.innerHTML = '<span class="text-muted small">Loading columns...</span>';
+            lookupHistoryValue.innerHTML = '<option value="">-- Select column to get value --</option>';
+            document.getElementById('lookupMatchStatus').innerHTML = '';
+
             if (!historyId) return;
+
             try {
                 const res = await fetch('/tools/pricing/history/' + historyId);
                 const json = await res.json();
@@ -874,26 +988,70 @@
                     lookupData = json.item.data;
                     const historyCols = Object.keys(lookupData[0]);
                     const optionsHtml = historyCols.map(c => `<option value="${c}">${c}</option>`).join('');
-                    lookupHistoryKey.innerHTML = optionsHtml;
-                    lookupHistoryValue.innerHTML = optionsHtml;
-                    const currentCols = Object.keys(currentData[0] || {});
-                    lookupColumnsContainer.innerHTML = '';
-                    currentCols.forEach(col => {
-                        const btn = document.createElement('button');
-                        btn.className = 'btn btn-sm btn-outline-info';
-                        btn.textContent = `lookup([${col}])`;
-                        btn.onclick = () => {
-                            formulaInput.focus();
-                            document.execCommand('insertText', false, `lookup([${col}]) `);
-                        };
-                        lookupColumnsContainer.appendChild(btn);
-                    });
+                    lookupHistoryValue.innerHTML = '<option value="">-- Select column to get value --</option>' + optionsHtml;
+
+                    // Re-check current column match if already selected
+                    const currentKeyCol = document.getElementById('lookupCurrentKey').value;
+                    if (currentKeyCol) {
+                        document.getElementById('lookupCurrentKey').dispatchEvent(new Event('change'));
+                    }
                 } else {
-                    lookupColumnsContainer.innerHTML = '<span class="text-danger small">Could not load this history item.</span>';
+                    alert('Could not load history table data.');
                 }
             } catch (err) {
-                lookupColumnsContainer.innerHTML = '<span class="text-danger small">Network error.</span>';
+                alert('Network error loading history table.');
             }
+        });
+
+        // ✅ UPDATED: Apply Lookup Button Handler (auto-match by column name)
+        document.getElementById('applyLookupBtn').addEventListener('click', () => {
+            const colName = document.getElementById('lookupNewColumnName').value.trim();
+            const currentKeyCol = document.getElementById('lookupCurrentKey').value;
+            const historyValueCol = lookupHistoryValue.value;
+
+            // Validation
+            if (!colName) { alert('Vui lòng nhập tên cột mới (Step 1).'); return; }
+            if (!lookupData) { alert('Vui lòng chọn bảng history (Step 2).'); return; }
+            if (!currentKeyCol) { alert('Vui lòng chọn cột match (Step 3).'); return; }
+            if (!historyValueCol) { alert('Vui lòng chọn cột lấy giá trị (Step 4).'); return; }
+
+            // Auto-match: use same column name for history key
+            const historyKeyCol = currentKeyCol;
+            const historyCols = Object.keys(lookupData[0]);
+            if (!historyCols.includes(historyKeyCol)) {
+                alert(`Cột "${historyKeyCol}" không tồn tại trong bảng history! Không thể auto-match.`);
+                return;
+            }
+
+            // Check if column already exists
+            if (currentData.length > 0 && Object.keys(currentData[0]).includes(colName)) {
+                alert(`Cột "${colName}" đã tồn tại!`);
+                return;
+            }
+
+            // Build lookup map: historyKeyCol -> historyValueCol
+            const lookupMap = new Map(lookupData.map(r => [String(r[historyKeyCol]), r[historyValueCol]]));
+
+            // Apply lookup to each row
+            let matchCount = 0;
+            currentData.forEach(row => {
+                const keyValue = String(row[currentKeyCol] ?? '');
+                if (lookupMap.has(keyValue)) {
+                    row[colName] = lookupMap.get(keyValue);
+                    matchCount++;
+                } else {
+                    row[colName] = ''; // No match
+                }
+            });
+
+            userAddedColumns.add(colName);
+            renderTable(currentData);
+            formulaModalObj.hide();
+
+            // Reset form
+            document.getElementById('lookupNewColumnName').value = '';
+
+            alert(`Lookup hoàn thành! Đã match ${matchCount}/${currentData.length} dòng.`);
         });
     });
 

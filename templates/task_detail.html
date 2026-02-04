@@ -12,32 +12,32 @@
             <h3 class="fw-bold mt-2 mb-0 text-dark">Task Details</h3>
             <span class="text-muted small">ID: {{ task.id }}</span>
         </div>
-        
+
         <!-- Quick Status Actions -->
         <div>
             {% set s_display = task.status if task.status in statuses else 'todo' %}
-            
+
             <div class="dropdown">
-              <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
+                <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
                      {% if s_display == 'todo' %}btn-secondary
                      {% elif s_display == 'waiting' %}btn-info text-white
                      {% elif s_display == 'doing' %}btn-warning text-white
                      {% elif s_display == 'done' %}btn-success
                      {% elif s_display == 'overdue' %}btn-danger
                      {% elif s_display == 'cancelled' %}btn-dark
-                     {% endif %}"
-                     type="button" data-bs-toggle="dropdown">
-                {{ s_display|upper }}
-              </button>
-              <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2">
-                {% for s in statuses %}
+                     {% endif %}" type="button" data-bs-toggle="dropdown">
+                    {{ s_display|upper }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2">
+                    {% for s in statuses %}
                     <li>
-                        <button class="dropdown-item rounded-2" onclick="updateDetailStatus('{{ task.id }}', '{{ s }}')">
+                        <button class="dropdown-item rounded-2"
+                            onclick="updateDetailStatus('{{ task.id }}', '{{ s }}')">
                             {{ s|upper }}
                         </button>
                     </li>
-                {% endfor %}
-              </ul>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
     </div>
@@ -51,9 +51,8 @@
                         Task Content <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                     </h5>
                     <!-- EDITABLE CONTENT -->
-                    <div id="todo_content" 
-                         class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2"
-                         onclick="makeEditable(this, 'todo_content', 'textarea')">
+                    <div id="todo_content" class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2"
+                        onclick="makeEditable(this, 'todo_content', 'textarea')">
                         {{ task.todo_content }}
                     </div>
 
@@ -65,52 +64,68 @@
                             <label class="small text-muted fw-bold">
                                 Context (Customer/Dept)
                             </label>
-                            
+
                             <!-- Display Logic for Context -->
                             {% if task.is_department_task %}
-                                <!-- Department Task uses customer_name mapped to department in backend -->
-                                <div class="fw-semibold text-secondary">
-                                    {{ task.department or task.customer_name or '---' }}
-                                </div>
+                            <!-- Department Task uses customer_name mapped to department in backend -->
+                            <div class="fw-semibold text-secondary">
+                                {{ task.department or task.customer_name or '---' }}
+                            </div>
                             {% elif task.is_normal_task and current_user.role in ['superadmin', 'admin'] %}
-                                <!-- EDITABLE NAME if Normal Task & Admin -->
-                                <div id="customer_name" 
-                                     class="fw-semibold editable-field p-1 rounded-2"
-                                     onclick="makeEditable(this, 'customer_name', 'text')">
-                                    {{ task.customer_name or 'Unknown' }}
-                                </div>
+                            <!-- EDITABLE NAME if Normal Task & Admin -->
+                            <div id="customer_name" class="fw-semibold editable-field p-1 rounded-2"
+                                onclick="makeEditable(this, 'customer_name', 'text')">
+                                {{ task.customer_name or 'Unknown' }}
+                            </div>
                             {% else %}
-                                <!-- Read-only for others (Corp/Normal) -->
-                                <div class="fw-semibold text-dark">
-                                    {{ task.customer_name or '---' }}
-                                </div>
+                            <!-- Read-only for others (Corp/Normal) -->
+                            <div class="fw-semibold text-dark">
+                                {{ task.customer_name or '---' }}
+                            </div>
                             {% endif %}
-                            
+
                             {% if task.customer_psid and task.is_normal_task %}
-                                <a href="/customer/{{ task.customer_psid }}" class="text-decoration-none small text-primary d-block mt-1">
-                                    View Customer Profile
-                                </a>
+                            <a href="/customer/{{ task.customer_psid }}"
+                                class="text-decoration-none small text-primary d-block mt-1">
+                                View Customer Profile
+                            </a>
                             {% endif %}
                         </div>
 
                         <div class="col-md-6">
-                            <label class="small text-muted fw-bold">Assignee</label>
-                            <div class="d-flex align-items-center mt-1 flex-wrap gap-1">
+                            <label class="small text-muted fw-bold">
+                                Assignee
+                                {% if task.kind in ['corp', 'department'] %}
+                                <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
+                                {% endif %}
+                            </label>
+                            <div class="d-flex align-items-center mt-1 flex-wrap gap-1" id="assigneesContainer">
                                 {% if task.kind == 'corp' or task.kind == 'department' %}
-                                    {% for name in task.assignees %}
-                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">
-                                            {{ name }}
-                                        </span>
-                                    {% endfor %}
+                                {% for name in task.assignees %}
+                                <span
+                                    class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1 assignee-badge"
+                                    data-name="{{ name }}">
+                                    {{ name }}
+                                    <button type="button" class="btn-close btn-close-sm ms-1" style="font-size: 0.6em;"
+                                        onclick="removeAssignee('{{ name }}')" title="Remove"></button>
+                                </span>
+                                {% endfor %}
+
+                                <!-- Add Assignee Button -->
+                                <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-2 py-0"
+                                    data-bs-toggle="modal" data-bs-target="#editAssigneesModal" title="Edit Assignees">
+                                    <i class="bi bi-plus-lg"></i>
+                                </button>
                                 {% else %}
-                                    <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold;">
-                                        {{ task.assignee[0].upper() if task.assignee else '?' }}
-                                    </div>
-                                    <span>{{ task.assignee }}</span>
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-2"
+                                    style="width: 30px; height: 30px; font-weight: bold;">
+                                    {{ task.assignee[0].upper() if task.assignee else '?' }}
+                                </div>
+                                <span>{{ task.assignee }}</span>
                                 {% endif %}
                             </div>
                         </div>
-                        
+
                         <!-- Department Label (Extra visual cue) -->
                         <div class="col-md-6 {% if not task.department %}d-none{% endif %}">
                             <label class="small text-muted fw-bold">Department Tag</label>
@@ -126,15 +141,15 @@
                                 Due Date <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                             </label>
                             <!-- EDITABLE DUE DATE -->
-                            <div id="due_at" 
-                                 class="fw-semibold text-danger editable-field p-1 rounded-2"
-                                 onclick="makeEditable(this, 'due_at', 'datetime-local')"
-                                 data-value="{{ task.due_at.strftime('%Y-%m-%dT%H:%M') if task.due_at else '' }}">
+                            <div id="due_at" class="fw-semibold text-danger editable-field p-1 rounded-2"
+                                onclick="makeEditable(this, 'due_at', 'datetime-local')"
+                                data-value="{{ task.due_at.strftime('%Y-%m-%dT%H:%M') if task.due_at else '' }}">
                                 <i class="bi bi-calendar-event me-1"></i>
-                                <span>{{ task.due_at.strftime('%H:%M %d/%m/%Y') if task.due_at else 'Set Deadline' }}</span>
+                                <span>{{ task.due_at.strftime('%H:%M %d/%m/%Y') if task.due_at else 'Set Deadline'
+                                    }}</span>
                             </div>
                         </div>
-                         <div class="col-md-6">
+                        <div class="col-md-6">
                             <label class="small text-muted fw-bold">Last Updated</label>
                             <div class="text-muted">
                                 {{ task.updated_at.strftime('%H:%M %d/%m') if task.updated_at else '---' }}
@@ -145,9 +160,8 @@
                             <label class="small text-muted fw-bold">
                                 Note <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                             </label>
-                            <div id="note" 
-                                 class="fw-medium text-dark editable-field p-2 rounded-2 bg-light border"
-                                 onclick="makeEditable(this, 'note', 'textarea')">
+                            <div id="note" class="fw-medium text-dark editable-field p-2 rounded-2 bg-light border"
+                                onclick="makeEditable(this, 'note', 'textarea')">
                                 {{ task.note or '---' }}
                             </div>
                         </div>
@@ -165,20 +179,22 @@
                 </div>
                 <div class="card-body p-4">
                     {% if task.attachment %}
-                        <div class="p-3 bg-light rounded-3 border mb-3">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-file-earmark-text fs-3 text-primary me-3"></i>
-                                <div class="overflow-hidden">
-                                    <div class="fw-bold text-truncate" title="{{ task.attachment }}">{{ task.attachment }}</div>
-                                    <a href="{{ url_for('static', filename='uploads/' + task.attachment) }}" target="_blank" class="small text-decoration-none">View / Download</a>
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-file-earmark-text fs-3 text-primary me-3"></i>
+                            <div class="overflow-hidden">
+                                <div class="fw-bold text-truncate" title="{{ task.attachment }}">{{ task.attachment }}
                                 </div>
+                                <a href="{{ url_for('static', filename='uploads/' + task.attachment) }}" target="_blank"
+                                    class="small text-decoration-none">View / Download</a>
                             </div>
                         </div>
+                    </div>
                     {% else %}
-                        <div class="text-center text-muted py-3">
-                            <i class="bi bi-file-earmark-x fs-1 opacity-25"></i>
-                            <p class="small mt-2">No file attached</p>
-                        </div>
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-file-earmark-x fs-1 opacity-25"></i>
+                        <p class="small mt-2">No file attached</p>
+                    </div>
                     {% endif %}
 
                     <hr class="my-3">
@@ -201,28 +217,30 @@
                     <div class="d-grid gap-2">
                         {# ✅ LOGIC: CONVERT PERSONAL TASK #}
                         {% if task.kind == 'personal' and task.user_id|string == current_user.id|string %}
-                             <button class="btn btn-primary rounded-pill w-100" 
-                                    data-bs-toggle="modal" data-bs-target="#convertTaskModal">
-                                <i class="bi bi-arrow-repeat me-1"></i> Convert Type
-                            </button>
-                            <hr>
+                        <button class="btn btn-primary rounded-pill w-100" data-bs-toggle="modal"
+                            data-bs-target="#convertTaskModal">
+                            <i class="bi bi-arrow-repeat me-1"></i> Convert Type
+                        </button>
+                        <hr>
                         {% endif %}
 
                         {# ✅ LOGIC: DELETE vs REQUEST DELETE #}
-                        {% set is_own_personal = (task.kind == 'personal' and task.user_id|string == current_user.id|string) %}
+                        {% set is_own_personal = (task.kind == 'personal' and task.user_id|string ==
+                        current_user.id|string) %}
                         {% set is_admin_or_super = current_user.role in ['superadmin', 'admin'] %}
-                        
+
                         {% if is_own_personal or is_admin_or_super %}
-                            <!-- Direct Delete for Admin/Superadmin OR Personal Task Owner -->
-                            <form action="/task/delete/{{ task.id }}" method="POST" onsubmit="return confirm('Permanently delete this task?')">
-                                <button class="btn btn-link text-danger w-100 text-decoration-none">Delete Task</button>
-                            </form>
+                        <!-- Direct Delete for Admin/Superadmin OR Personal Task Owner -->
+                        <form action="/task/delete/{{ task.id }}" method="POST"
+                            onsubmit="return confirm('Permanently delete this task?')">
+                            <button class="btn btn-link text-danger w-100 text-decoration-none">Delete Task</button>
+                        </form>
                         {% else %}
-                            <!-- User viewing Non-Personal (Corp/Normal) -> Request Delete -->
-                            <button class="btn btn-link text-warning w-100 text-decoration-none" 
-                                    data-bs-toggle="modal" data-bs-target="#requestDeleteModal">
-                                <i class="bi bi-exclamation-circle me-1"></i> Request Delete
-                            </button>
+                        <!-- User viewing Non-Personal (Corp/Normal) -> Request Delete -->
+                        <button class="btn btn-link text-warning w-100 text-decoration-none" data-bs-toggle="modal"
+                            data-bs-target="#requestDeleteModal">
+                            <i class="bi bi-exclamation-circle me-1"></i> Request Delete
+                        </button>
                         {% endif %}
                     </div>
                 </div>
@@ -234,213 +252,233 @@
 <!-- Convert Task Modal (For Personal Tasks) -->
 {% if task.kind == 'personal' %}
 <div class="modal fade" id="convertTaskModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-      <div class="modal-header bg-primary text-white py-3 px-4">
-        <h5 class="modal-title fw-bold"><i class="bi bi-arrow-repeat me-2"></i>Convert Task Type</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-      <form action="/task/convert/{{ task.id }}" method="POST" enctype="multipart/form-data">
-        <div class="modal-body p-4">
-            <p class="text-muted small mb-3">Select a new type for this task. All relevant fields will be available for update.</p>
-            
-            <div class="mb-3">
-                <label class="form-label fw-bold small">TARGET TYPE</label>
-                <select name="target_type" id="targetTypeSelect" class="form-select rounded-3" onchange="toggleConvertFields()">
-                    <option value="customer">Customer Task</option>
-                    <option value="corp">Corporate Task</option>
-                    <option value="department">Department Task</option>
-                    <option value="request">Customer Request</option>
-                </select>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-arrow-repeat me-2"></i>Convert Task Type</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
+            <form action="/task/convert/{{ task.id }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <p class="text-muted small mb-3">Select a new type for this task. All relevant fields will be
+                        available for update.</p>
 
-            <hr class="my-3 opacity-25">
-
-            <!-- COMMON FIELDS (Always needed/editable) -->
-            <div class="mb-3">
-                <label class="form-label fw-bold small text-muted">TITLE / CONTENT</label>
-                <textarea name="todo_content" class="form-control rounded-3" rows="2">{{ task.todo_content }}</textarea>
-            </div>
-            
-            <div class="row g-2 mb-3">
-                <div class="col-6">
-                    <label class="form-label fw-bold small text-muted">DEADLINE</label>
-                    <input type="datetime-local" name="due_at" class="form-control rounded-3" 
-                           value="{{ task.due_at.strftime('%Y-%m-%dT%H:%M') if task.due_at else '' }}">
-                </div>
-                <div class="col-6">
-                    <label class="form-label fw-bold small text-muted">ATTACHMENT</label>
-                    <input type="file" name="attachment" class="form-control rounded-3">
-                </div>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label fw-bold small text-muted">NOTE</label>
-                <textarea name="note" class="form-control rounded-3" rows="2">{{ task.note or '' }}</textarea>
-            </div>
-
-            <!-- TYPE SPECIFIC FIELDS -->
-            
-            <!-- 1. CUSTOMER FIELDS -->
-            <div id="fields_customer" class="type-fields">
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-info">CUSTOMER NAME</label>
-                    <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter customer name...">
-                </div>
-                <!-- ✅ ASSIGNEE FOR CUSTOMER (Single Select) -->
-                {% if current_user.role in ['superadmin', 'admin'] %}
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-info">ASSIGN TO</label>
-                    <select name="assigned_user_ids" class="form-select rounded-3">
-                        <option value="{{ current_user._id }}">Me ({{ current_user.username }})</option>
-                        {% for u in users_list %}
-                            {% if u._id|string != current_user.id|string %}
-                            <option value="{{ u._id }}">{{ u.username }}</option>
-                            {% endif %}
-                        {% endfor %}
-                    </select>
-                </div>
-                {% endif %}
-            </div>
-
-            <!-- 2. CORP FIELDS -->
-            <div id="fields_corp" class="type-fields d-none">
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-primary">DEPARTMENTS</label>
-                    <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
-                        {% for d in corp_departments %}
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="departments" value="{{ d }}" id="conv_c_dept_{{ loop.index }}">
-                            <label class="form-check-label small" for="conv_c_dept_{{ loop.index }}">{{ d }}</label>
-                        </div>
-                        {% endfor %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">TARGET TYPE</label>
+                        <select name="target_type" id="targetTypeSelect" class="form-select rounded-3"
+                            onchange="toggleConvertFields()">
+                            <option value="customer">Customer Task</option>
+                            <option value="corp">Corporate Task</option>
+                            <option value="department">Department Task</option>
+                            <option value="request">Customer Request</option>
+                        </select>
                     </div>
-                </div>
-                <!-- ✅ ASSIGNEES FOR CORP (Multi Checkbox) -->
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-primary">ASSIGNEES</label>
-                    <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
-                        {% for u in users_list %}
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="corp_assign_{{ u._id }}"
-                                   {% if u._id|string == current_user.id|string %}checked{% endif %}>
-                            <label class="form-check-label small" for="corp_assign_{{ u._id }}">{{ u.username }}</label>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
 
-            <!-- 3. DEPT FIELDS -->
-            <div id="fields_department" class="type-fields d-none">
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-success">DEPARTMENT</label>
-                    {# ✅ Changed to Checklist/Radio for consistency #}
-                    <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
-                        {% if current_user.role == 'superadmin' %}
-                            {% for d in department_task_departments %}
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="radio" name="department" value="{{ d }}" id="conv_dept_val_{{ loop.index }}" onchange="filterDeptAssignees()">
-                                <label class="form-check-label small" for="conv_dept_val_{{ loop.index }}">{{ d }}</label>
-                            </div>
-                            {% endfor %}
-                        {% else %}
-                            {% for d in current_user.departments %}
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="radio" name="department" value="{{ d }}" id="conv_dept_val_{{ loop.index }}" onchange="filterDeptAssignees()">
-                                <label class="form-check-label small" for="conv_dept_val_{{ loop.index }}">{{ d }}</label>
-                            </div>
-                            {% endfor %}
+                    <hr class="my-3 opacity-25">
+
+                    <!-- COMMON FIELDS (Always needed/editable) -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">TITLE / CONTENT</label>
+                        <textarea name="todo_content" class="form-control rounded-3"
+                            rows="2">{{ task.todo_content }}</textarea>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label fw-bold small text-muted">DEADLINE</label>
+                            <input type="datetime-local" name="due_at" class="form-control rounded-3"
+                                value="{{ task.due_at.strftime('%Y-%m-%dT%H:%M') if task.due_at else '' }}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-bold small text-muted">ATTACHMENT</label>
+                            <input type="file" name="attachment" class="form-control rounded-3">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">NOTE</label>
+                        <textarea name="note" class="form-control rounded-3" rows="2">{{ task.note or '' }}</textarea>
+                    </div>
+
+                    <!-- TYPE SPECIFIC FIELDS -->
+
+                    <!-- 1. CUSTOMER FIELDS -->
+                    <div id="fields_customer" class="type-fields">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-info">CUSTOMER NAME</label>
+                            <input type="text" name="customer_name" class="form-control rounded-3"
+                                placeholder="Enter customer name...">
+                        </div>
+                        <!-- ✅ ASSIGNEE FOR CUSTOMER (Single Select) -->
+                        {% if current_user.role in ['superadmin', 'admin'] %}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-info">ASSIGN TO</label>
+                            <select name="assigned_user_ids" class="form-select rounded-3">
+                                <option value="{{ current_user._id }}">Me ({{ current_user.username }})</option>
+                                {% for u in users_list %}
+                                {% if u._id|string != current_user.id|string %}
+                                <option value="{{ u._id }}">{{ u.username }}</option>
+                                {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
                         {% endif %}
                     </div>
-                </div>
-                <!-- ✅ ASSIGNEES FOR DEPT (Multi Checkbox) -->
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-success">ASSIGNEES</label>
-                    <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
-                        {% for u in users_list %}
-                        <div class="form-check mb-2 dept-assignee-row" data-user-depts="{{ u.departments|join(',') }}">
-                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="dept_assign_{{ u._id }}" 
-                                   {% if u._id|string == current_user.id|string %}checked{% endif %}>
-                            <label class="form-check-label small" for="dept_assign_{{ u._id }}">{{ u.username }}</label>
+
+                    <!-- 2. CORP FIELDS -->
+                    <div id="fields_corp" class="type-fields d-none">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-primary">DEPARTMENTS</label>
+                            <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
+                                {% for d in corp_departments %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="departments" value="{{ d }}"
+                                        id="conv_c_dept_{{ loop.index }}">
+                                    <label class="form-check-label small" for="conv_c_dept_{{ loop.index }}">{{ d
+                                        }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
                         </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- 4. REQUEST FIELDS -->
-            <div id="fields_request" class="type-fields d-none">
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-warning">CUSTOMER NAME</label>
-                    <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Customer name...">
-                </div>
-                
-                <!-- ✅ ASSIGNEES FOR REQUEST (Multi Checkbox) -->
-                <div class="mb-3">
-                    <label class="form-label fw-bold small text-warning">ASSIGNEES</label>
-                    <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
-                        {% for u in users_list %}
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="assigned_user_ids" value="{{ u._id }}" id="req_assign_{{ u._id }}"
-                                   {% if u._id|string == current_user.id|string %}checked{% endif %}>
-                            <label class="form-check-label small" for="req_assign_{{ u._id }}">{{ u.username }}</label>
+                        <!-- ✅ ASSIGNEES FOR CORP (Multi Checkbox) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-primary">ASSIGNEES</label>
+                            <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
+                                {% for u in users_list %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="assigned_user_ids"
+                                        value="{{ u._id }}" id="corp_assign_{{ u._id }}" {% if
+                                        u._id|string==current_user.id|string %}checked{% endif %}>
+                                    <label class="form-check-label small" for="corp_assign_{{ u._id }}">{{ u.username
+                                        }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
                         </div>
-                        {% endfor %}
                     </div>
-                </div>
 
-                <div class="row g-2">
-                    <div class="col-6">
-                        <label class="form-label fw-bold small text-warning">BUSINESS TYPE</label>
-                        <select name="business_type" class="form-select rounded-3">
-                            {% for b in business_types %}
-                            <option value="{{ b }}">{{ b }}</option>
-                            {% endfor %}
-                        </select>
+                    <!-- 3. DEPT FIELDS -->
+                    <div id="fields_department" class="type-fields d-none">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-success">DEPARTMENT</label>
+                            {# ✅ Changed to Checklist/Radio for consistency #}
+                            <div class="border rounded-3 p-3 bg-light" style="max-height:150px; overflow-y:auto;">
+                                {% if current_user.role == 'superadmin' %}
+                                {% for d in department_task_departments %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="department" value="{{ d }}"
+                                        id="conv_dept_val_{{ loop.index }}" onchange="filterDeptAssignees()">
+                                    <label class="form-check-label small" for="conv_dept_val_{{ loop.index }}">{{ d
+                                        }}</label>
+                                </div>
+                                {% endfor %}
+                                {% else %}
+                                {% for d in current_user.departments %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="radio" name="department" value="{{ d }}"
+                                        id="conv_dept_val_{{ loop.index }}" onchange="filterDeptAssignees()">
+                                    <label class="form-check-label small" for="conv_dept_val_{{ loop.index }}">{{ d
+                                        }}</label>
+                                </div>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <!-- ✅ ASSIGNEES FOR DEPT (Multi Checkbox) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-success">ASSIGNEES</label>
+                            <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
+                                {% for u in users_list %}
+                                <div class="form-check mb-2 dept-assignee-row"
+                                    data-user-depts="{{ u.departments|join(',') }}">
+                                    <input class="form-check-input" type="checkbox" name="assigned_user_ids"
+                                        value="{{ u._id }}" id="dept_assign_{{ u._id }}" {% if
+                                        u._id|string==current_user.id|string %}checked{% endif %}>
+                                    <label class="form-check-label small" for="dept_assign_{{ u._id }}">{{ u.username
+                                        }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
                     </div>
-                    <div class="col-6">
-                        <label class="form-label fw-bold small text-warning">STATUS (NOTE)</label>
-                        <select name="request_status_note" class="form-select rounded-3">
-                            {% for s in request_statuses %}
-                            <option value="{{ s }}">{{ s }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-            </div>
 
+                    <!-- 4. REQUEST FIELDS -->
+                    <div id="fields_request" class="type-fields d-none">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-warning">CUSTOMER NAME</label>
+                            <input type="text" name="customer_name" class="form-control rounded-3"
+                                placeholder="Customer name...">
+                        </div>
+
+                        <!-- ✅ ASSIGNEES FOR REQUEST (Multi Checkbox) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-warning">ASSIGNEES</label>
+                            <div class="border rounded-3 p-3" style="max-height:150px; overflow-y:auto;">
+                                {% for u in users_list %}
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="assigned_user_ids"
+                                        value="{{ u._id }}" id="req_assign_{{ u._id }}" {% if
+                                        u._id|string==current_user.id|string %}checked{% endif %}>
+                                    <label class="form-check-label small" for="req_assign_{{ u._id }}">{{ u.username
+                                        }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label fw-bold small text-warning">BUSINESS TYPE</label>
+                                <select name="business_type" class="form-select rounded-3">
+                                    {% for b in business_types %}
+                                    <option value="{{ b }}">{{ b }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-bold small text-warning">STATUS (NOTE)</label>
+                                <select name="request_status_note" class="form-select rounded-3">
+                                    {% for s in request_statuses %}
+                                    <option value="{{ s }}">{{ s }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-pill shadow-sm">Convert</button>
+                </div>
+            </form>
         </div>
-        <div class="modal-footer border-0 bg-light px-4 py-3">
-            <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-primary rounded-pill shadow-sm">Convert</button>
-        </div>
-      </form>
     </div>
-  </div>
 </div>
 {% endif %}
 
 <!-- Request Delete Modal -->
 <div class="modal fade" id="requestDeleteModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-      <div class="modal-header border-0 bg-warning py-2 px-3 text-dark">
-        <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Request Delete</h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <form action="/task/request-delete-generic/{{ task.id }}" method="POST">
-        <div class="modal-body p-3">
-          <p class="small text-muted mb-2">You don't have permission to delete this task directly. Submit a request to Admin?</p>
-          <label class="form-label small fw-bold">Reason:</label>
-          <textarea name="reason" class="form-control form-control-sm" rows="3" required placeholder="Why delete this task?"></textarea>
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header border-0 bg-warning py-2 px-3 text-dark">
+                <h6 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Request Delete</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="/task/request-delete-generic/{{ task.id }}" method="POST">
+                <div class="modal-body p-3">
+                    <p class="small text-muted mb-2">You don't have permission to delete this task directly. Submit a
+                        request to Admin?</p>
+                    <label class="form-label small fw-bold">Reason:</label>
+                    <textarea name="reason" class="form-control form-control-sm" rows="3" required
+                        placeholder="Why delete this task?"></textarea>
+                </div>
+                <div class="modal-footer border-0 p-2 bg-light">
+                    <button type="submit" class="btn btn-warning btn-sm w-100 rounded-pill">Submit Request</button>
+                </div>
+            </form>
         </div>
-        <div class="modal-footer border-0 p-2 bg-light">
-          <button type="submit" class="btn btn-warning btn-sm w-100 rounded-pill">Submit Request</button>
-        </div>
-      </form>
     </div>
-  </div>
 </div>
 
 <style>
@@ -449,14 +487,22 @@
         transition: all 0.2s ease;
         border: 1px solid transparent;
     }
+
     .editable-field:hover {
         background-color: #f8f9fa;
         border-color: #dee2e6;
     }
+
     @keyframes flash-success {
-        0% { background-color: #d1e7dd; }
-        100% { background-color: transparent; }
+        0% {
+            background-color: #d1e7dd;
+        }
+
+        100% {
+            background-color: transparent;
+        }
     }
+
     .flash-saved {
         animation: flash-success 1s ease-out;
     }
@@ -471,7 +517,7 @@
         isEditing = true;
 
         const currentValue = element.innerText.trim();
-        const rawValue = element.getAttribute('data-value') || currentValue; 
+        const rawValue = element.getAttribute('data-value') || currentValue;
 
         let input;
 
@@ -482,7 +528,7 @@
         } else if (type === 'datetime-local') {
             input = document.createElement('input');
             input.type = 'datetime-local';
-            input.value = rawValue; 
+            input.value = rawValue;
         } else {
             input = document.createElement('input');
             input.type = 'text';
@@ -490,16 +536,16 @@
         }
 
         input.className = 'form-control shadow-sm';
-        
+
         element.innerHTML = '';
         element.appendChild(input);
         input.focus();
 
-        input.addEventListener('blur', function() {
+        input.addEventListener('blur', function () {
             saveField(element, fieldName, input.value, type);
         });
 
-        input.addEventListener('keydown', function(e) {
+        input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' && type !== 'textarea') {
                 input.blur();
             }
@@ -508,22 +554,22 @@
 
     async function saveField(element, fieldName, value, type) {
         let displayValue = value;
-        
+
         if (type === 'datetime-local') {
-             if (value) {
+            if (value) {
                 const date = new Date(value);
-                const h = String(date.getHours()).padStart(2,'0');
-                const m = String(date.getMinutes()).padStart(2,'0');
-                const d = String(date.getDate()).padStart(2,'0');
-                const mo = String(date.getMonth()+1).padStart(2,'0');
+                const h = String(date.getHours()).padStart(2, '0');
+                const m = String(date.getMinutes()).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                const mo = String(date.getMonth() + 1).padStart(2, '0');
                 const y = date.getFullYear();
                 displayValue = `<i class="bi bi-calendar-event me-1"></i>${h}:${m} ${d}/${mo}/${y}`;
                 element.setAttribute('data-value', value);
-             } else {
-                 displayValue = 'Set Deadline';
-             }
+            } else {
+                displayValue = 'Set Deadline';
+            }
         } else if (value.trim() === '') {
-            displayValue = 'Empty'; 
+            displayValue = 'Empty';
         }
 
         element.innerHTML = displayValue;
@@ -541,7 +587,7 @@
                 },
                 body: JSON.stringify(payload)
             });
-            
+
             if (res.ok) {
                 element.classList.add('flash-saved');
                 setTimeout(() => element.classList.remove('flash-saved'), 1000);
@@ -558,11 +604,11 @@
         try {
             const formData = new FormData();
             formData.append('status', newStatus);
-            
+
             const res = await fetch(`/task/quick-update/${taskId}`, {
                 method: 'POST',
                 body: formData,
-                headers: {'X-Requested-With': 'XMLHttpRequest'}
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
             });
             const data = await res.json();
             if (data.status === 'success') {
@@ -570,7 +616,7 @@
             } else {
                 alert('Failed to update status.');
             }
-        } catch(e) {
+        } catch (e) {
             console.error(e);
             alert('Error');
         }
@@ -580,16 +626,16 @@
     function filterDeptAssignees() {
         const checkedRadio = document.querySelector('input[name="department"]:checked');
         if (!checkedRadio) return;
-        
+
         const selectedDept = checkedRadio.value;
-        const rows = document.querySelectorAll('.dept-assignee-row'); 
-        
+        const rows = document.querySelectorAll('.dept-assignee-row');
+
         rows.forEach(row => {
             const userDepts = (row.getAttribute('data-user-depts') || '').split(',');
             const checkbox = row.querySelector('input[type="checkbox"]');
-            
+
             if (userDepts.includes(selectedDept)) {
-                row.classList.remove('d-none'); 
+                row.classList.remove('d-none');
             } else {
                 row.classList.add('d-none');
                 if (checkbox) checkbox.checked = false; // Uncheck hidden users
@@ -600,7 +646,7 @@
     function toggleConvertFields() {
         const val = document.getElementById('targetTypeSelect').value;
         const allFields = document.querySelectorAll('.type-fields');
-        
+
         // Hide all first
         allFields.forEach(el => el.classList.add('d-none'));
 
@@ -617,17 +663,111 @@
                 filterDeptAssignees();
             }
         }
-        
+
         // Disable inputs in hidden fields to prevent conflict
         allFields.forEach(div => {
             if (div.id !== `fields_${val}`) {
-                 const hiddenAssignees = div.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
-                 hiddenAssignees.forEach(el => el.disabled = true);
+                const hiddenAssignees = div.querySelectorAll('input[name="assigned_user_ids"], select[name="assigned_user_ids"]');
+                hiddenAssignees.forEach(el => el.disabled = true);
             }
         });
     }
-    
+
     // Run on load to set initial state
     document.addEventListener('DOMContentLoaded', toggleConvertFields);
+
+    // ✅ NEW: Assignee Management Functions
+    const currentAssignees = {{ task.assignees|default ([]) | tojson }};
+    const currentAssignedIds = {{ (task.assigned_to |default ([]))| map('string') | list | tojson }};
+
+    async function removeAssignee(username) {
+        if (!confirm(`Remove ${username} from this task?`)) return;
+
+        // Find and remove the user
+        const newAssignees = currentAssignees.filter(n => n !== username);
+        if (newAssignees.length === 0) {
+            alert('Cannot remove all assignees. At least one is required.');
+            return;
+        }
+
+        // Get remaining user IDs from the modal checkboxes
+        const remainingIds = [];
+        document.querySelectorAll('#editAssigneesModal input[type="checkbox"]').forEach(cb => {
+            const label = cb.nextElementSibling;
+            if (label && newAssignees.includes(label.textContent.trim())) {
+                remainingIds.push(cb.value);
+            }
+        });
+
+        await updateAssignees(remainingIds);
+    }
+
+    async function saveAssignees() {
+        const checkedBoxes = document.querySelectorAll('#editAssigneesModal input[type="checkbox"]:checked');
+        const newIds = Array.from(checkedBoxes).map(cb => cb.value);
+
+        if (newIds.length === 0) {
+            alert('Please select at least one assignee.');
+            return;
+        }
+
+        await updateAssignees(newIds);
+    }
+
+    async function updateAssignees(userIds) {
+        try {
+            const res = await fetch(`/task/update/${TASK_ID}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ assigned_user_ids: userIds })
+            });
+
+            if (res.ok) {
+                window.location.reload();
+            } else {
+                alert('Failed to update assignees.');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Network error.');
+        }
+    }
 </script>
+
+<!-- ✅ NEW: Edit Assignees Modal -->
+{% if task.kind in ['corp', 'department'] %}
+<div class="modal fade" id="editAssigneesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-3 px-4">
+                <h5 class="modal-title fw-bold"><i class="bi bi-people me-2"></i>Edit Assignees</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-muted small mb-3">Select users to assign to this task:</p>
+                <div class="border rounded-3 p-3" style="max-height:250px; overflow-y:auto;">
+                    {% for u in users_list %}
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" value="{{ u._id }}" id="edit_assign_{{ u._id }}"
+                            {% if u._id|string in (task.assigned_to|default([]))|map('string')|list %}checked{% endif
+                            %}>
+                        <label class="form-check-label" for="edit_assign_{{ u._id }}">{{ u.username }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer border-0 bg-light px-4 py-3">
+                <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary rounded-pill shadow-sm" onclick="saveAssignees()">
+                    <i class="bi bi-check-lg me-1"></i>Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}

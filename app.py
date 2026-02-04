@@ -1,19 +1,87 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
 from flask_apscheduler import APScheduler
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from models import User
+from models import User, PricingHistory
 from services.pancake import PancakeService
 from datetime import datetime, timedelta, timezone
 from pymongo import MongoClient
 from bson.objectid import ObjectId
+import urllib.parse
 import requests, time, random, string, re
 import uuid
 import os
 import sys
+import paramiko
+import pandas as pd
+import io
+import zipfile
+import xml.etree.ElementTree as ET
+from sshtunnel import SSHTunnelForwarder
 from dotenv import load_dotenv
 load_dotenv()
+
+# --- FIX LỖI DSSKey (MONKEYPATCH) ---
+# Đoạn này cực kỳ quan trọng để không bị crash trên Windows
+if not hasattr(paramiko, 'DSSKey'):
+    paramiko.DSSKey = paramiko.PKey
+
+def get_db():
+    """
+    Tạo kết nối Database. Nếu ở Local sẽ dựng SSH Tunnel.
+    """
+    # 1. Lấy thông số SSH (Để mở đường hầm)
+    ssh_host = os.getenv("SSH_HOST")
+    ssh_user = os.getenv("SSH_USER", "root")
+    ssh_pass = os.getenv("SSH_PASSWORD")
+    
+    # 2. Lấy thông số MongoDB (Để đăng nhập Database)
+    db_user = os.getenv("MONGO_USER", "THGfulfill")
+    db_pass = os.getenv("MONGO_PASS")
+    db_name = os.getenv("MONGO_DB", "CRM_Production")
+    
+    # Mã hóa mật khẩu DB (vì pass DB nằm trong URI nên cần quote_plus)
+    # Ký tự đặc biệt trong pass SSH thì KHÔNG cần mã hóa
+    encoded_db_pass = urllib.parse.quote_plus(db_pass) if db_pass else ""
+
+    if ssh_host:
+        print(f"🛠  Đang dựng SSH Tunnel tới {ssh_host}...")
+        try:
+            # Dựng đường hầm SSH
+            tunnel = SSHTunnelForwarder(
+                (ssh_host, 22),
+                ssh_username=ssh_user,
+                ssh_password=ssh_pass, # Gửi pass SSH nguyên bản
+                remote_bind_address=('127.0.0.1', 27017),
+                local_bind_address=('127.0.0.1', 27017),
+                host_pkey_directories=[],
+                allow_agent=False
+            )
+            tunnel.start()
+            print("🚀 SSH Tunnel OK!")
+
+            # Kết nối tới MongoDB qua cổng 27017 của đường hầm
+            uri = f"mongodb://{db_user}:{encoded_db_pass}@127.0.0.1:27017/{db_name}?authSource=admin"
+            client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+            
+            # Kiểm tra "sức khỏe" kết nối
+            client.admin.command('ping')
+            print(f"✅ Đã kết nối Database: {db_name}")
+            return client, client[db_name], tunnel
+
+        except Exception as e:
+            print(f"❌ Lỗi kết nối: {e}")
+            raise e
+    else:
+        # Chế độ chạy trên Server (dùng MONGO_URI trực tiếp)
+        print("🔌 Đang kết nối Database trực tiếp...")
+        uri = os.getenv("MONGO_URI")
+        client = MongoClient(uri)
+        client.admin.command('ping')
+        db_name = os.getenv("MONGO_DB", "CRM_Production")
+        print(f"✅ Đã kết nối Database: {db_name}")
+        return client, client[db_name], None
 
 # --- THIRD PARTY CONFIG ---
 # Load Config from .env
@@ -29,10 +97,13 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessag
 app = Flask(__name__)
 
 # --- APP CONFIG ---
-MONGO_URI = "mongodb://admin:admin123@45.76.188.143:27017/test?authSource=admin"
-client = MongoClient(MONGO_URI)
-db = client.CRM_Production
+try:
+    client, db, tunnel = get_db()
+except Exception as e:
+    print(f"FATAL: Không thể kết nối tới Database. App sẽ thoát. Lỗi: {e}")
+    sys.exit(1)
 app.config['SECRET_KEY'] = 'crm_thg_ultimate_2025_secure_final_v5'
+pricing_history = PricingHistory(db)
 
 # --- UPLOAD CONFIG ---
 UPLOAD_FOLDER = 'static/uploads'
@@ -47,6 +118,13 @@ login_manager.user_loader(lambda uid: User(db.users.find_one({"_id": ObjectId(ui
 login_manager.login_view = 'login'
 login_manager.login_message = None
 login_manager.init_app(app)
+
+# ✅ CONTEXT PROCESSOR: Pass utility functions to all templates
+@app.context_processor
+def utility_processor():
+    return {
+        'now_dt': now_dt
+    }
 
 # --- LARK CONFIG ---
 LARK_APP_ID, LARK_APP_SECRET = "cli_a87a40a3d6b85010", "wFMNBqGMhcuZsyNDZVAnYgOv6XuZyAqn"
@@ -110,6 +188,329 @@ def save_uploaded_file(file_obj):
             log_to_file(f"Error saving file: {e}")
             return None
     return None
+
+# ==========================================
+# ✅ NATIVE XLSX READERS & PRICING HELPERS (from test.py & app1.py)
+# ==========================================
+def col_str_to_int(col_str):
+    """Convert column letter to 0-based index (e.g., 'A'->0, 'Z'->25, 'AA'->26)"""
+    expn = 0
+    col_num = 0
+    for char in reversed(col_str):
+        col_num += (ord(char) - ord('A') + 1) * (26 ** expn)
+        expn += 1
+    return col_num - 1
+
+def get_sheet_mapping_native(file_path):
+    """Trả về dict map tên sheet sang đường dẫn file XML bên trong file zip XLSX."""
+    mapping = {}
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            workbook_xml = z.read('xl/workbook.xml')
+            root = ET.fromstring(workbook_xml)
+            sheet_ids = {} 
+            ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+                  'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'}
+            
+            for sheet in root.findall('.//ns:sheet', ns):
+                name = sheet.get('name')
+                r_id = sheet.get(f"{{{ns['r']}}}id")
+                if name and r_id: sheet_ids[r_id] = name
+            
+            if 'xl/_rels/workbook.xml.rels' in z.namelist():
+                rels_xml = z.read('xl/_rels/workbook.xml.rels')
+                rels_root = ET.fromstring(rels_xml)
+                ns_rels = {'ns': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+                
+                for rel in rels_root.findall('.//ns:Relationship', ns_rels):
+                    r_id = rel.get('Id')
+                    target = rel.get('Target')
+                    if r_id in sheet_ids:
+                        if target.startswith('/'): target = target[1:]
+                        else: target = 'xl/' + target
+                        mapping[sheet_ids[r_id]] = target
+    except Exception as e:
+        log_to_file(f"Native Sheet Mapping Error: {e}")
+    return mapping
+
+def read_xlsx_sheet_native(file_path, sheet_xml_path):
+    """Đọc dữ liệu từ sheet XML với xử lý toạ độ cột chính xác"""
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            # 1. Read Shared Strings
+            shared_strings = []
+            if 'xl/sharedStrings.xml' in z.namelist():
+                with z.open('xl/sharedStrings.xml') as f:
+                    tree = ET.parse(f)
+                    root = tree.getroot()
+                    ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                    for si in root.findall('.//ns:si', ns):
+                        text = ""
+                        for t in si.findall('.//ns:t', ns):
+                            if t.text: text += t.text
+                        shared_strings.append(text)
+            
+            # 2. Parse Sheet Data
+            if sheet_xml_path not in z.namelist(): return pd.DataFrame()
+            
+            rows_dict = {} 
+            max_col = 0
+            
+            with z.open(sheet_xml_path) as f:
+                ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                context = ET.iterparse(f, events=('end',))
+                
+                for event, elem in context:
+                    if elem.tag.endswith('c'): 
+                        r_attr = elem.get('r') 
+                        if not r_attr: continue
+                        
+                        match = re.match(r"([A-Z]+)([0-9]+)", r_attr)
+                        if not match: continue
+                        
+                        col_str, row_str = match.groups()
+                        col_idx = col_str_to_int(col_str)
+                        row_idx = int(row_str) - 1
+                        
+                        if col_idx > max_col: max_col = col_idx
+                        
+                        val = ""
+                        ctype = elem.get('t')
+                        v_tag = elem.find('ns:v', ns)
+                        
+                        if v_tag is not None and v_tag.text:
+                            val = v_tag.text
+                            if ctype == 's': 
+                                try: val = shared_strings[int(val)]
+                                except: pass
+                            elif ctype == 'b': 
+                                val = bool(int(val))
+                        
+                        is_tag = elem.find('ns:is', ns)
+                        if is_tag is not None:
+                            t_tag = is_tag.find('.//ns:t', ns)
+                            if t_tag is not None and t_tag.text: val = t_tag.text
+                        
+                        if row_idx not in rows_dict: rows_dict[row_idx] = {}
+                        rows_dict[row_idx][col_idx] = val
+                        
+                        elem.clear() 
+
+            # 3. Convert to List of Lists
+            data = []
+            if not rows_dict: return pd.DataFrame()
+            
+            sorted_rows = sorted(rows_dict.keys())
+            max_row = sorted_rows[-1]
+            
+            for r in range(max_row + 1):
+                row_data = []
+                if r in rows_dict:
+                    for c in range(max_col + 1):
+                        row_data.append(rows_dict[r].get(c, ""))
+                else:
+                    row_data = [""] * (max_col + 1)
+                data.append(row_data)
+            
+            return pd.DataFrame(data)
+
+    except Exception as e:
+        log_to_file(f"Native XLSX Parse Error: {e}")
+        return pd.DataFrame()
+
+def get_xlsx_sheet_names_native(file_path):
+    mapping = get_sheet_mapping_native(file_path)
+    return list(mapping.keys()) if mapping else ['Sheet1']
+
+# --- COUNTRY MAPPING (Code -> Chinese) ---
+COUNTRY_MAP = {
+    'US': '美国', 'GB': '英国', 'DE': '德国', 'FR': '法国', 'IT': '意大利', 'ES': '西班牙',
+    'AU': '澳大利亚', 'CA': '加拿大', 'JP': '日本', 'KR': '韩国', 'SG': '新加坡',
+    'MY': '马来西亚', 'TH': '泰国', 'VN': '越南', 'PH': '菲律宾', 'ID': '印度尼西亚',
+    'BR': '巴西', 'MX': '墨西哥', 'CL': '智利', 'RU': '俄罗斯', 'NL': '荷兰',
+    'BE': '比利时', 'AT': '奥地利', 'PL': '波兰', 'CZ': '捷克', 'DK': '丹麦',
+    'FI': '芬兰', 'NO': '挪威', 'SE': '瑞典', 'CH': '瑞士', 'IE': '爱尔兰',
+    'PT': '葡萄牙', 'GR': '希腊', 'HU': '匈牙利', 'RO': '罗马尼亚', 'SK': '斯洛伐克',
+    'SI': '斯洛文尼亚', 'HR': '克罗地亚', 'EE': '爱沙尼亚', 'LV': '拉脱维aj', 'LT': '立陶宛',
+    'BG': '保加利亚', 'CY': '塞浦路斯', 'MT': '马耳他', 'LU': '卢森堡'
+}
+
+VN_REGION_MAP = {
+    'US': 'USA', 'AU': 'AU', 'CA': 'CA', 'GB': 'UK', 'UK': 'UK',
+    'HK': 'HK', 'SG': 'SG', 'JP': 'JP', 'NZ': 'NZ', 'MX': 'MX',
+    'BR': 'BR', 'CH': 'CH', 'CL': 'CL', 'AE': 'AE', 'SA': 'SA'
+}
+
+def normalize_country(code_or_name):
+    """Normalize US -> 美国, or keep 美国 if already Chinese"""
+    if not code_or_name: return ""
+    code_or_name = str(code_or_name).strip().upper()
+    return COUNTRY_MAP.get(code_or_name, code_or_name) 
+
+# --- LOGIC: Indexing Price Table ---
+def index_price_table(file_path):
+    """
+    Quét qua tất cả các sheet.
+    Tìm ô chứa '运输代码:XYZ' hoặc 'Product Code:XYZ'.
+    Trả về dict: {'XYZ': {'sheet_xml': 'path/to/xml', 'sheet_name': 'Name'}}
+    """
+    mapping = get_sheet_mapping_native(file_path)
+    index = {}
+    
+    for sheet_name, xml_path in mapping.items():
+        df = read_xlsx_sheet_native(file_path, xml_path)
+        if df.empty: continue
+        
+        found_code = None
+        for r in range(min(20, len(df))):
+            row_vals = df.iloc[r].astype(str).values
+            row_str = " ".join(row_vals)
+            # ✅ UPDATED REGEX: Add Product Code for VN sheets
+            match = re.search(r'(?:运输代码|Transport Code|Product Code)[:：]\s*([A-Za-z0-9\-\_]+)', row_str, re.IGNORECASE)
+            if match:
+                found_code = match.group(1).strip()
+                break
+        
+        if found_code:
+            index[found_code] = {'sheet_xml': xml_path, 'sheet_name': sheet_name}
+            
+    return index
+
+# --- LOGIC: Checking Weight ---
+def check_weight_rule(weight_val, rule_str):
+    """
+    Parse rule like '0<W<=0.1' or '0.1<W≤0.2'
+    """
+    try:
+        w = float(weight_val)
+        rule_str = str(rule_str).replace(" ", "").upper()
+        
+        match = re.search(r'([\d\.]+)[<＜]W[<＜≤<=]([\d\.]+)', rule_str)
+        if match:
+            min_w = float(match.group(1))
+            max_w = float(match.group(2))
+            if min_w < w <= max_w: return True
+            return False
+        
+        # Fallback exact match or range with dash
+        if '-' in rule_str:
+            parts = rule_str.split('-')
+            if float(parts[0]) <= w <= float(parts[1]): return True
+        
+        # Fallback if rule_str is just a number (Exact weight step in matrix)
+        try:
+            step_w = float(rule_str)
+            if w == step_w: return True
+        except: pass
+            
+    except: pass
+    return False
+
+# --- LOGIC: Calculate Single Row ---
+def calculate_price_for_row(row_data, price_df):
+    """
+    Tìm giá trong DataFrame của 1 sheet cụ thể.
+    Hỗ trợ 2 dạng: 
+    1. Dọc (CN-WW): Cột Country, Cột Weight, Cột Price...
+    2. Ngang/Matrix (VN-WW): Header chứa tên vùng, nhiều cột Weight...
+    """
+    try:
+        # 1. Identify Header Row
+        header_idx = -1
+        for r in range(min(20, len(price_df))): 
+            row_vals = [str(x).strip() for x in price_df.iloc[r].values]
+            # Dấu hiệu bảng Dọc hoặc Ngang
+            if any('国家' in x or 'Country' in x or 'Weight' in x for x in row_vals):
+                header_idx = r
+                break
+        
+        if header_idx == -1: return "Lỗi Header", "Lỗi Header"
+        
+        headers = [str(x).strip() for x in price_df.iloc[header_idx].values]
+        df = price_df.iloc[header_idx+1:].copy()
+        df.columns = headers
+        
+        raw_country_input = str(row_data.get('Quốc gia', '')).strip().upper()
+        target_weight = float(row_data.get('Cân nặng', 0))
+
+        # ✅ CHECK IF MATRIX STRUCTURE (VN-WW Style)
+        # Nếu có đơn vị (VND) hoặc nhiều cột Weight (KG)
+        is_matrix = headers.count('Weight (KG)') > 1 or any('(VND)' in h or '（VND）' in h for h in headers)
+
+        if is_matrix:
+            # MATRIX LOGIC
+            # Bước 1: Tìm cột khớp với vùng
+            matched_col_idx = -1
+            # Thử map code (US -> USA)
+            vn_region_name = VN_REGION_MAP.get(raw_country_input, raw_country_input)
+            
+            for i, h in enumerate(headers):
+                h_clean = h.replace('\n', ' ').upper()
+                if vn_region_name in h_clean:
+                    matched_col_idx = i
+                    break
+            
+            if matched_col_idx == -1: return "Vùng không khớp", 0
+            
+            # Bước 2: Tìm cột Weight (KG) tương ứng (gần nhất bên trái cột matched_col_idx)
+            weight_col_idx = -1
+            for i in range(matched_col_idx, -1, -1):
+                if 'Weight' in headers[i]:
+                    weight_col_idx = i
+                    break
+            
+            if weight_col_idx == -1: return "Thiếu cột KL", 0
+            
+            # Bước 3: Tìm dòng khớp cân nặng
+            for _, p_row in df.iterrows():
+                rule = str(p_row.iloc[weight_col_idx]).strip()
+                if check_weight_rule(target_weight, rule):
+                    val = p_row.iloc[matched_col_idx]
+                    try:
+                        return int(round(float(val))), 0 # VN-WW: VND nên làm tròn đến hàng đơn vị
+                    except: return "Lỗi Giá", 0
+            
+            return "Không tìm thấy bước KL", 0
+
+        else:
+            # VERTICAL LOGIC (Bản cũ CN-WW)
+            col_country = next((c for c in headers if '国家' in c or 'Country' in c), None)
+            col_zone = next((c for c in headers if '分区' in c or 'Zone' in c), None)
+            col_weight = next((c for c in headers if '重量' in c or 'Weight' in c), None)
+            col_price = next((c for c in headers if '运费' in c or 'Freight' in c), None)
+            col_fee = next((c for c in headers if '挂号费' in c or 'Fee' in c or 'RMB/票' in c), None)
+            
+            if not col_country or not col_price: return "Thiếu Cột", "Thiếu Cột"
+            
+            target_zone_num = None
+            if '-' in raw_country_input:
+                parts = raw_country_input.split('-')
+                target_country = normalize_country(parts[0].strip())
+                zm = re.search(r'(\d+)', parts[1])
+                if zm: target_zone_num = zm.group(1)
+            else:
+                target_country = normalize_country(raw_country_input)
+
+            for _, p_row in df.iterrows():
+                curr_country = str(p_row[col_country]).strip()
+                supported_countries = [c.strip() for c in re.split(r'[,，、;]', curr_country)]
+                if target_country not in supported_countries: continue
+                
+                if col_zone and target_zone_num:
+                    if target_zone_num not in str(p_row[col_zone]).strip(): continue
+                    
+                weight_rule = str(p_row[col_weight]).strip()
+                if check_weight_rule(target_weight, weight_rule):
+                    try:
+                        unit_price = float(p_row[col_price])
+                        fee = float(p_row[col_fee]) if col_fee and str(p_row[col_fee]).strip() and str(p_row[col_fee]).strip() != 'nan' else 0
+                        return round(unit_price, 2), round(fee, 2)
+                    except: return "Lỗi Value", "Lỗi Value"
+                    
+            return "Không tìm thấy vùng", "N/A"
+
+    except Exception as e:
+        return f"Err: {str(e)}", "Err"
 
 # ✅ TELEGRAM HELPER BASIC
 def send_telegram_notification(chat_id, text):
@@ -298,7 +699,30 @@ def sync_all_lark_task():
         LAST_SYNC_TIMESTAMP = time.time()
     except: pass
 
-# ❌ REMOVED sync_lark_tasks_task to stop syncing customer tasks from Lark
+def sync_lark_tasks_task():
+    global LAST_SYNC_TIMESTAMP
+    tk = get_lark_token()
+    if not tk: return
+    try:
+        res = requests.get(f"https://open.larksuite.com/open-apis/bitable/v1/apps/{LARK_TASK_APP_TOKEN}/tables/{LARK_TASK_TABLE_ID}/records", 
+                           headers={"Authorization": f"Bearer {tk}"}, timeout=60).json()
+        for item in res.get('data', {}).get('items', []):
+            f = item.get('fields', {})
+            assignee = f.get('Chịu trách nhiệm', [])[0].get('name', '---') if f.get('Chịu trách nhiệm') else '---'
+            u_id = None
+            lu = db.users.find_one({"username": assignee})
+            if lu: u_id = lu['_id']
+            
+            raw = f.get('Time') or f.get('Deadline')
+            due_at = parse_due_at(raw) if isinstance(raw, str) else None
+            
+            db.tasks.update_one({"id": item.get('record_id')}, {"$set": {
+                "todo_content": f.get('Nội Dung Todo', ''), "status": f.get('Tình trạng', 'Not_yet'),
+                "assignee": assignee, "assigned_to": u_id, "customer_name": f.get('Tên Nhóm Khách/Khách mới', ''),
+                "due_at": due_at, "updated_at": now_dt()
+            }}, upsert=True)
+        LAST_SYNC_TIMESTAMP = time.time()
+    except: pass
 
 def pancake_sync_task():
     global LAST_SYNC_TIMESTAMP
@@ -929,14 +1353,34 @@ def update_task_detail(id):
     if request.is_json:
         data = request.get_json()
         upd = {"updated_at": now_dt()}
-        # ✅ Generic content update based on task kind
+        # ✅ FIX: Only update fields that are ACTUALLY provided in data (not None)
         if col_name == 'tasks':
-            upd.update({"todo_content": data.get('todo_content'), "customer_name": data.get('customer_name')})
-        elif col_name in ['corp_tasks', 'personal_tasks']:
-            upd["title"] = data.get('todo_content')
+            if 'todo_content' in data and data.get('todo_content') is not None:
+                upd["todo_content"] = data.get('todo_content')
+            if 'customer_name' in data and data.get('customer_name') is not None:
+                upd["customer_name"] = data.get('customer_name')
+        elif col_name in ['corp_tasks', 'department_tasks']:
+            # ✅ FIX: Only update title if provided
+            if 'todo_content' in data and data.get('todo_content') is not None:
+                upd["title"] = data.get('todo_content')
+        elif col_name == 'personal_tasks':
+            if 'todo_content' in data and data.get('todo_content') is not None:
+                upd["title"] = data.get('todo_content')
+        
         if 'due_at' in data: upd['due_at'] = parse_due_at(data['due_at'])
         
         if 'note' in data: upd['note'] = data['note'] # ✅ Update note field
+
+        # ✅ NEW: Handle Assignee Updates for Corp/Department Tasks
+        if 'assigned_user_ids' in data and col_name in ['corp_tasks', 'department_tasks']:
+            ids = data['assigned_user_ids']
+            if isinstance(ids, list):
+                try:
+                    users = list(db.users.find({"_id": {"$in": [ObjectId(uid) for uid in ids]}}))
+                    upd['assigned_to'] = [u["_id"] for u in users]
+                    upd['assignees'] = [u["username"] for u in users]
+                    upd['assignee'] = users[0]["username"] if users else '---'
+                except: pass
 
         db[col_name].update_one({"id": id}, {"$set": upd})
         return jsonify({"status": "success"})
@@ -1843,49 +2287,6 @@ def delete_customer_request(id):
     return redirect(url_for('view_tasks', type='request')) # ✅ Redirect to unified view with 'request' filter
 
 # ---------------------------
-# ROUTES: TOOLS (NEW PRICING)
-# ---------------------------
-@app.route('/tools/pricing')
-@login_required
-def view_pricing_tool():
-    """Giao diện Pricing Tool"""
-    return render_template('pricing.html')
-
-@app.route('/tools/pricing/calculate', methods=['POST'])
-@login_required
-def pricing_calculate():
-    """API tính toán giá cước (Mock Logic)"""
-    try:
-        data = request.json or request.form
-        weight = float(data.get('weight', 0))
-        service = data.get('service', 'Express')
-        country = data.get('country', 'VN')
-        
-        # Simple Mock Formula (Thay thế bằng logic thực tế sau này)
-        base_price = 30000 if service == 'Express' else 15000
-        rate_per_kg = 20000
-        
-        # Surcharges mock
-        fuel_surcharge = 0.15 # 15%
-        
-        subtotal = base_price + (weight * rate_per_kg)
-        total = subtotal * (1 + fuel_surcharge)
-        
-        return jsonify({
-            "status": "success",
-            "data": {
-                "weight": weight,
-                "service": service,
-                "country": country,
-                "subtotal": round(subtotal, 0),
-                "total_price": round(total, 0),
-                "currency": "VND"
-            }
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
-
-# ---------------------------
 # ✅ API: EXTERNAL (n8n Integration)
 # ---------------------------
 @app.route('/api/external/task', methods=['POST'])
@@ -2257,7 +2658,7 @@ def sync_now():
     init_pancake_pages(True)
     pancake_sync_task()
     sync_all_lark_task()
-    # Removed Lark Task Sync
+    sync_lark_tasks_task()
     return redirect(request.referrer)
 
 @app.route('/webhook/lark', methods=['POST'])
@@ -2302,6 +2703,347 @@ def api_broadcast_send():
         time.sleep(1)
     return jsonify({"success": cnt, "total": len(cids)})
 
+# ---------------------------
+# ROUTES: TOOLS (PRICING LOGIC)
+# ---------------------------
+@app.route('/tools/pricing')
+@login_required
+def view_pricing_tool():
+    """Giao diện Pricing Tool"""
+    return render_template('pricing.html')
+
+@app.route('/tools/pricing/calculate_all', methods=['POST'])
+@login_required
+def pricing_calculate_all():
+    """Tính cước cho toàn bộ danh sách import"""
+    try:
+        data = request.json.get('data', [])
+        if not data: return jsonify({"status": "error", "message": "No data"}), 400
+        
+        # 1. Lấy file bảng giá mới nhất
+        latest_pt = db.price_tables.find_one(sort=[("uploaded_at", -1)])
+        if not latest_pt:
+            return jsonify({"status": "error", "message": "Missing Price Table"}), 404
+            
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], latest_pt['filename'])
+        if not os.path.exists(file_path):
+            return jsonify({"status": "error", "message": "Price Table File Lost"}), 404
+
+        # 2. Build Index: Scan ALL sheets for Transport Code
+        sheet_index = index_price_table(file_path)
+        sheet_cache = {} 
+        results = []
+        
+        for row in data:
+            # ✅ LOGIC TÌM SHEET: Ưu tiên 'Service' > 'SERVICE CODE'
+            # Clean up whitespace in keys and values
+            clean_row = {str(k).strip(): v for k, v in row.items()}
+            
+            s_val = str(clean_row.get('Service', '')).strip()
+            sc_val = str(clean_row.get('SERVICE CODE', '')).strip()
+            
+            # Use 'Service' column first (e.g., YTYCPREG)
+            service_code = s_val if s_val else sc_val
+            
+            # Map Keys: 'Quốc gia' -> 'Country' for consistency
+            # Handle Vietnamese keys from Template
+            country_val = clean_row.get('Quốc gia') or clean_row.get('Country', '')
+            weight_val = clean_row.get('Cân nặng') or clean_row.get('Weight', 0)
+            
+            row_normalized = {
+                'Quốc gia': country_val,
+                'Cân nặng': weight_val,
+                'SERVICE CODE': service_code
+            }
+            
+            freight = "N/A"
+            reg_fee = "N/A"
+            
+            # Find Sheet Info from Index
+            sheet_info = sheet_index.get(service_code)
+            
+            if sheet_info:
+                xml_path = sheet_info['sheet_xml']
+                sheet_name = sheet_info['sheet_name']
+                
+                # Load Sheet Data (Cached)
+                if sheet_name not in sheet_cache:
+                    df = read_xlsx_sheet_native(file_path, xml_path)
+                    sheet_cache[sheet_name] = df
+                
+                df = sheet_cache[sheet_name]
+                if not df.empty:
+                    # Calculate
+                    freight, reg_fee = calculate_price_for_row(row_normalized, df)
+                else:
+                    freight = "Lỗi Sheet"
+            else:
+                freight = "Mã DV không khớp" # Service Code Not Found
+                log_to_file(f"Code '{service_code}' not found in index. Available keys: {list(sheet_index.keys())[:5]}...")
+            
+            new_row = row.copy()
+            new_row['Cước chính'] = freight
+            new_row['Phí đăng ký'] = reg_fee
+            results.append(new_row)
+        
+        return jsonify({"status": "success", "data": results})
+        
+    except Exception as e:
+        log_to_file(f"Pricing Calculation Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/tools/pricing/export', methods=['POST'])
+@login_required
+def export_pricing_results():
+    """Xuất danh sách đã tính toán ra file Excel/CSV"""
+    try:
+        data = request.json.get('data', [])
+        if not data: return jsonify({"status": "error", "message": "No data"}), 400
+        
+        df = pd.DataFrame(data)
+
+        df.insert(0, 'STT', range(1, 1 + len(df)))
+
+        desired_cols = [
+            'STT', 'Tg vận chuyển', 'Service', 'SERVICE CODE',
+            'Quốc gia', 'Cân nặng', 'Cước chính', 'Phí đăng ký'
+        ]
+
+        final_cols = [col for col in desired_cols if col in df.columns]
+        other_cols = [col for col in df.columns if col not in final_cols]
+        
+        df_export = df[final_cols + other_cols]
+        
+        output = io.BytesIO()
+        df_export.to_csv(output, index=False, encoding='utf-8-sig')
+        output.seek(0)
+        
+        return send_file(
+            output, 
+            download_name=f"Pricing_Results_{now_dt().strftime('%Y%m%d_%H%M')}.csv", 
+            as_attachment=True, 
+            mimetype='text/csv'
+        )
+    except Exception as e:
+        log_to_file(f"Pricing Export Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/tools/pricing/history')
+@login_required
+def get_pricing_history():
+    """API để lấy danh sách lịch sử tính giá."""
+    try:
+        items = pricing_history.list_latest(limit=50)
+        for item in items:
+            item['_id'] = str(item['_id'])
+            if 'created_by' in item and item['created_by']:
+                item['created_by'] = str(item['created_by'])
+            if item.get('created_at'):
+                item['created_at'] = item['created_at'].isoformat()
+        return jsonify({"status": "success", "items": items})
+    except Exception as e:
+        log_to_file(f"Pricing History Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/tools/pricing/history/<history_id>')
+@login_required
+def get_pricing_history_detail(history_id):
+    """API để lấy chi tiết một lần tính giá."""
+    try:
+        item = pricing_history.get_by_id(history_id)
+        if not item:
+            return jsonify({"status": "error", "message": "History not found"}), 404
+        
+        item['_id'] = str(item['_id'])
+        if item.get('created_by'):
+            item['created_by'] = str(item['created_by'])
+        if item.get('created_at'):
+            item['created_at'] = item['created_at'].isoformat()
+
+        return jsonify({"status": "success", "item": item})
+    except Exception as e:
+        log_to_file(f"Pricing History Detail Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/tools/pricing/history/save', methods=['POST'])
+@login_required
+def save_pricing_history():
+    """API để người dùng chủ động lưu kết quả vào lịch sử."""
+    try:
+        data = request.json.get('data', [])
+        mode = request.json.get('mode', 'Unknown')
+        name = request.json.get('name')
+        if not data:
+            return jsonify({"status": "error", "message": "No data to save"}), 400
+        
+        pricing_history.create(
+            data=data, 
+            mode=mode,
+            user_id=ObjectId(current_user.id),
+            name=name
+        )
+        return jsonify({"status": "success", "message": "Saved to history."})
+    except Exception as e:
+        log_to_file(f"Pricing History Save Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/tools/pricing/formulas')
+@login_required
+def get_pricing_formulas():
+    formulas = list(db.pricing_formulas.find({}))
+    for f in formulas:
+        f['_id'] = str(f['_id'])
+        if 'user_id' in f and f.get('user_id'):
+            f['user_id'] = str(f['user_id'])
+        if 'updated_at' in f and isinstance(f.get('updated_at'), datetime):
+            f['updated_at'] = f['updated_at'].isoformat()
+    return jsonify({"status": "success", "formulas": formulas})
+
+@app.route('/tools/pricing/formulas/save', methods=['POST'])
+@login_required
+def save_pricing_formula():
+    data = request.json
+    name = data.get('name')
+    formula_str = data.get('formula')
+    if not name or not formula_str:
+        return jsonify({"status": "error", "message": "Name and formula are required"}), 400
+    
+    db.pricing_formulas.update_one(
+        {"name": name},
+        {"$set": {
+            "name": name,
+            "formula": formula_str,
+            "user_id": ObjectId(current_user.id),
+            "updated_at": now_dt()
+        }},
+        upsert=True
+    )
+    return jsonify({"status": "success", "message": "Formula saved"})
+
+@app.route('/tools/pricing/formulas/delete/<formula_id>', methods=['POST'])
+@login_required
+def delete_pricing_formula(formula_id):
+    result = db.pricing_formulas.delete_one({"_id": ObjectId(formula_id)})
+    return jsonify({"status": "success"}) if result.deleted_count > 0 else (jsonify({"status": "error"}), 404)
+
+@app.route('/tools/pricing/history/delete/<history_id>', methods=['POST'])
+@login_required
+def delete_pricing_history(history_id):
+    try:
+        success = pricing_history.delete_by_id(history_id)
+        if success:
+            return jsonify({"status": "success", "message": "History deleted."})
+        else:
+            return jsonify({"status": "error", "message": "History not found or could not be deleted."}), 404
+    except Exception as e:
+        log_to_file(f"Pricing History Delete Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/tools/pricing/download-template')
+@login_required
+def download_template():
+    df = pd.DataFrame(columns=['Tg vận chuyển', 'Service', 'SERVICE CODE', 'Quốc gia', 'Cân nặng'])
+    df.loc[0] = ['3-5 days', 'Express', 'YTYCPREG', 'US', '0.5']
+    
+    output = io.BytesIO()
+    df.to_csv(output, index=False, encoding='utf-8-sig')
+    output.seek(0)
+    
+    return send_file(
+        output, 
+        download_name='pricing_template.csv', 
+        as_attachment=True, 
+        mimetype='text/csv'
+    )
+
+@app.route('/upload_data', methods=['POST'])
+@login_required
+def upload_data():
+    if 'file' not in request.files:
+        return jsonify({"success": False, "message": "No file uploaded"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"success": False, "message": "No selected file"}), 400
+        
+    if file:
+        filename = save_uploaded_file(file)
+        if not filename:
+            return jsonify({"success": False, "message": "Save file failed"}), 500
+            
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        try:
+            if filename.lower().endswith('.csv'):
+                try:
+                    df = pd.read_csv(filepath, encoding='utf-8-sig')
+                except UnicodeDecodeError:
+                    try:
+                        df = pd.read_csv(filepath, encoding='utf-8')
+                    except UnicodeDecodeError:
+                        df = pd.read_csv(filepath, encoding='latin1')
+                except Exception as e:
+                     return jsonify({"success": False, "message": f"Lỗi đọc CSV: {str(e)}"}), 400
+            else:
+                try:
+                    df = pd.read_excel(filepath)
+                except Exception:
+                    mapping = get_sheet_mapping_native(filepath)
+                    if mapping:
+                        first_sheet = list(mapping.values())[0]
+                        df = read_xlsx_sheet_native(filepath, first_sheet)
+                        
+                        if not df.empty and len(df) > 0:
+                            df.columns = df.iloc[0].astype(str).str.strip()
+                            df = df[1:].reset_index(drop=True)
+                    else:
+                        df = None
+                        
+                    if df is None or df.empty:
+                         return jsonify({"success": False, "message": "Không thể đọc file Excel (Lỗi thư viện). Vui lòng thử lại với file .CSV."}), 400
+            
+            df.columns = df.columns.str.strip()
+            df = df.fillna('')
+            data = df.to_dict('records')
+            return jsonify({"success": True, "data": data})
+        except Exception as e:
+            return jsonify({"success": False, "message": f"Lỗi xử lý file: {str(e)}"}), 500
+            
+    return jsonify({"success": False, "message": "Unknown error"}), 500
+
+@app.route('/upload_price_table', methods=['POST'])
+@login_required
+def upload_price_table():
+    if 'file' not in request.files: return jsonify({"success": False, "message": "No file"}), 400
+    file = request.files['file']
+    if file.filename == '': return jsonify({"success": False, "message": "No name"}), 400
+    
+    filename = save_uploaded_file(file)
+    if not filename: return jsonify({"success": False, "message": "Save failed"}), 500
+
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    
+    try:
+        if filename.lower().endswith('.csv'):
+             xl = None
+             sheet_names = ['Main']
+        else:
+            try:
+                xl = pd.ExcelFile(filepath)
+                sheet_names = xl.sheet_names
+            except Exception:
+                sheet_names = get_xlsx_sheet_names_native(filepath)
+        
+        db.price_tables.insert_one({
+            "filename": filename,
+            "original_name": file.filename,
+            "uploaded_by": current_user.username,
+            "uploaded_at": now_dt(),
+            "sheets": sheet_names
+        })
+        
+        return jsonify({"success": True, "message": "Upload thành công", "sheets": sheet_names})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 if __name__ == '__main__':
     if db.users.count_documents({"username": "admin"}) == 0:
@@ -2317,7 +3059,7 @@ if __name__ == '__main__':
     if db.users.count_documents({"username": "superadmin"}) == 0:
         db.users.insert_one({
             "username": "superadmin",
-            "password_hash": generate_password_hash('superadmin123'),
+            "password_hash": generate_password_hash('supaeradmin123'),
             "role": SUPERADMIN_ROLE,
             "department": "Vận Hành",
             "created_at": now_dt()
@@ -2329,8 +3071,7 @@ if __name__ == '__main__':
     if not scheduler.running:
         scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', seconds=60)
         scheduler.add_job(id='l_leads', func=sync_all_lark_task, trigger='interval', seconds=60)
-        
-        # ❌ REMOVED Job 'l_tasks' to stop auto-sync from Lark
+        # scheduler.add_job(id='l_tasks', func=sync_lark_tasks_task, trigger='interval', seconds=60)
         
         # ✅ Unified auto overdue scheduler
         scheduler.add_job(id='auto_overdue', func=auto_scan_overdue_tasks, trigger='interval', seconds=60)

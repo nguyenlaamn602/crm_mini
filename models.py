@@ -28,8 +28,9 @@ class PricingHistory:
     def __init__(self, db):
         self.collection = db.pricing_history
 
-    def create(self, data, mode=None, user_id=None):
+    def create(self, data, mode=None, user_id=None, name=None):
         record = {
+            "name": name or mode or f"Calculation from {datetime.utcnow().strftime('%Y-%m-%d')}",
             "created_at": datetime.utcnow(),
             "created_by": user_id,
             "mode": mode,

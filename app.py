@@ -1171,6 +1171,37 @@ def view_tasks():
     }
     task_counts['all'] = sum(task_counts.values())
 
+    # ✅ NEW: Calculate status counts for horizontal tabs
+    status_counts = {'all': 0}
+    for s in UNIFIED_STATUSES:
+        count = 0
+        # Count from all collections based on current filters (without status filter)
+        base_q_customer = build_query('tasks')
+        base_q_corp = build_query('corp_tasks')
+        base_q_personal = build_query('personal_tasks')
+        base_q_dept = build_query('department_tasks')
+        base_q_request = build_query('customer_requests')
+        
+        # Add status filter for this specific status
+        def add_status_filter(q, status):
+            if q:
+                return {"$and": [q, {"status": status}]}
+            return {"status": status}
+        
+        if not filter_type or filter_type == 'customer':
+            count += db.tasks.count_documents(add_status_filter(base_q_customer, s))
+        if not filter_type or filter_type == 'corp':
+            count += db.corp_tasks.count_documents(add_status_filter(base_q_corp, s))
+        if not filter_type or filter_type == 'personal':
+            count += db.personal_tasks.count_documents(add_status_filter(base_q_personal, s))
+        if not filter_type or filter_type == 'department':
+            count += db.department_tasks.count_documents(add_status_filter(base_q_dept, s))
+        if not filter_type or filter_type == 'request':
+            count += db.customer_requests.count_documents(add_status_filter(base_q_request, s))
+        
+        status_counts[s] = count
+        status_counts['all'] += count
+
     # --- 5. FETCH DATA FOR DISPLAY ---
     all_items = []
     if not filter_type or filter_type == 'customer':
@@ -1234,7 +1265,8 @@ def view_tasks():
         department_task_departments=DEPARTMENT_TASK_DEPARTMENTS,
         request_statuses=REQUEST_STATUSES,
         business_types=BUSINESS_TYPES,
-        task_counts=task_counts
+        task_counts=task_counts,
+        status_counts=status_counts  # ✅ NEW: For horizontal status tabs
     )
 
 @app.route('/task/add', methods=['POST'])

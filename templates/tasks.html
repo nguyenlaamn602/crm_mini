@@ -60,54 +60,8 @@
         <!-- FILTER FORM WITH BIG CARDS -->
         <form action="/tasks" method="GET" id="filterForm">
 
-            <!-- ✅ NEW: Horizontal Status Tabs with Counts -->
+            <!-- FILTER ROW: Department + Date + Search -->
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-                <!-- All Status Tab -->
-                <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
-                    class="btn btn-sm rounded-pill px-3 {% if not request.args.get('status') %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-                    All <span class="badge bg-light text-dark ms-1">{{ status_counts.get('all', 0) }}</span>
-                </a>
-
-                <!-- Todo -->
-                <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='todo', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
-                    class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'todo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
-                    Todo <span
-                        class="badge {% if request.args.get('status') == 'todo' %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">{{
-                        status_counts.get('todo', 0) }}</span>
-                </a>
-
-                <!-- Waiting -->
-                <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='waiting', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
-                    class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'waiting' %}btn-info{% else %}btn-outline-info{% endif %}">
-                    Waiting <span
-                        class="badge {% if request.args.get('status') == 'waiting' %}bg-light text-dark{% else %}bg-info{% endif %} ms-1">{{
-                        status_counts.get('waiting', 0) }}</span>
-                </a>
-
-                <!-- Doing -->
-                <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='doing', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
-                    class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'doing' %}btn-warning{% else %}btn-outline-warning{% endif %}">
-                    Doing <span
-                        class="badge {% if request.args.get('status') == 'doing' %}bg-light text-dark{% else %}bg-warning text-dark{% endif %} ms-1">{{
-                        status_counts.get('doing', 0) }}</span>
-                </a>
-
-                <!-- Overdue -->
-                <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='overdue', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
-                    class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'overdue' %}btn-danger{% else %}btn-outline-danger{% endif %}">
-                    Overdue <span
-                        class="badge {% if request.args.get('status') == 'overdue' %}bg-light text-dark{% else %}bg-danger{% endif %} ms-1">{{
-                        status_counts.get('overdue', 0) }}</span>
-                </a>
-
-                <!-- Done -->
-                <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='done', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
-                    class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'done' %}btn-success{% else %}btn-outline-success{% endif %}">
-                    Done <span
-                        class="badge {% if request.args.get('status') == 'done' %}bg-light text-dark{% else %}bg-success{% endif %} ms-1">{{
-                        status_counts.get('done', 0) }}</span>
-                </a>
-
                 <!-- Department Filter -->
                 <select name="department" class="form-select form-select-sm bg-light border-0 rounded-pill px-3"
                     onchange="this.form.submit()" style="width: 160px;">
@@ -288,6 +242,63 @@
                 </div>
             </div>
         </form>
+    </div>
+
+    <!-- ✅ STATUS FILTER TABS - Moved above table -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3 px-2">
+        <!-- All Status Tab -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if not request.args.get('status') %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+            All <span class="badge bg-light text-dark ms-1">{{ status_counts.get('all', 0) }}</span>
+        </a>
+
+        <!-- Todo -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='todo', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'todo' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+            Todo <span
+                class="badge {% if request.args.get('status') == 'todo' %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">{{
+                status_counts.get('todo', 0) }}</span>
+        </a>
+
+        <!-- Doing -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='doing', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'doing' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+            Doing <span
+                class="badge {% if request.args.get('status') == 'doing' %}bg-light text-dark{% else %}bg-warning text-dark{% endif %} ms-1">{{
+                status_counts.get('doing', 0) }}</span>
+        </a>
+
+        <!-- Waiting -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='waiting', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'waiting' %}btn-info{% else %}btn-outline-info{% endif %}">
+            Waiting <span
+                class="badge {% if request.args.get('status') == 'waiting' %}bg-light text-dark{% else %}bg-info{% endif %} ms-1">{{
+                status_counts.get('waiting', 0) }}</span>
+        </a>
+
+        <!-- Done -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='done', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'done' %}btn-success{% else %}btn-outline-success{% endif %}">
+            Done <span
+                class="badge {% if request.args.get('status') == 'done' %}bg-light text-dark{% else %}bg-success{% endif %} ms-1">{{
+                status_counts.get('done', 0) }}</span>
+        </a>
+
+        <!-- Overdue -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='overdue', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'overdue' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+            Overdue <span
+                class="badge {% if request.args.get('status') == 'overdue' %}bg-light text-dark{% else %}bg-danger{% endif %} ms-1">{{
+                status_counts.get('overdue', 0) }}</span>
+        </a>
+
+        <!-- Cancelled -->
+        <a href="{{ url_for('view_tasks', type=request.args.get('type', ''), status='cancelled', department=request.args.get('department', ''), search=request.args.get('search', ''), date_filter=request.args.get('date_filter', ''), start_date=request.args.get('start_date', ''), end_date=request.args.get('end_date', '')) }}"
+            class="btn btn-sm rounded-pill px-3 {% if request.args.get('status') == 'cancelled' %}btn-dark{% else %}btn-outline-dark{% endif %}">
+            Cancelled <span
+                class="badge {% if request.args.get('status') == 'cancelled' %}bg-light text-dark{% else %}bg-dark{% endif %} ms-1">{{
+                status_counts.get('cancelled', 0) }}</span>
+        </a>
     </div>
 
     <!-- TABLE SECTION -->

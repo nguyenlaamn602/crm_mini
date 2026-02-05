@@ -555,19 +555,51 @@ def get_transit_time_cn(price_df, target_country):
 # ✅ NEW: Transit Time Helper for VN Price Tables (Transit time section)
 VN_TRANSIT_TIME_MAP = {
     # Default mapping based on VN price table Transit time section
-    'EU': '5-12 working days', 'US': '5-12 working days', 'USA': '5-12 working days',
-    'MX': '5-12 working days', 'CA': '5-12 working days', 'AE': '5-12 working days', 
-    'NZ': '5-12 working days', 'AU': '5-12 working days', 'GB': '5-12 working days',
-    'UK': '5-12 working days', 'DE': '5-12 working days', 'FR': '5-12 working days',
-    'IT': '5-12 working days', 'ES': '5-12 working days', 'NL': '5-12 working days',
-    'HK': '3-5 working days', 'MY': '3-5 working days', 'SG': '3-5 working days',
-    'JP': '5-10 working days', 'KR': '5-10 working days',
+    'EU': '5-12 BSD', 'US': '5-12 BSD', 'USA': '5-12 BSD',
+    'MX': '5-12 BSD', 'CA': '5-12 BSD', 'AE': '5-12 BSD', 
+    'NZ': '5-12 BSD', 'AU': '5-12 BSD', 'GB': '5-12 BSD',
+    'UK': '5-12 BSD', 'DE': '5-12 BSD', 'FR': '5-12 BSD',
+    'IT': '5-12 BSD', 'ES': '5-12 BSD', 'NL': '5-12 BSD',
+    'HK': '3-5 BSD', 'MY': '3-5 BSD', 'SG': '3-5 BSD',
+    'JP': '5-10 BSD', 'KR': '5-10 BSD',
 }
 
-def get_transit_time_vn(country_code):
-    """Get transit time for VN mode based on predefined mapping."""
-    code = str(country_code).strip().upper()
-    return VN_TRANSIT_TIME_MAP.get(code, '5-12 working days')
+def get_transit_time_vn(price_df, target_country):
+    """Extract transit time from VN price table, fallback to default if not found."""
+    try:
+        # Try to find Transit Time header in price table
+        header_idx = -1
+        for r in range(min(30, len(price_df))):
+            row_vals = [str(x).strip().lower() for x in price_df.iloc[r].values]
+            if any('transit' in x or 'time' in x or 'delivery' in x for x in row_vals):
+                header_idx = r
+                break
+        
+        if header_idx != -1:
+            headers = [str(x).strip() for x in price_df.iloc[header_idx].values]
+            df = price_df.iloc[header_idx+1:].copy()
+            df.columns = headers
+            
+            # Find transit time column
+            transit_col = next((c for c in headers if 'transit' in c.lower() or 'time' in c.lower()), None)
+            country_col = next((c for c in headers if 'country' in c.lower() or 'region' in c.lower() or 'zone' in c.lower()), None)
+            
+            if transit_col and country_col:
+                code = str(target_country).strip().upper()
+                for _, row in df.iterrows():
+                    curr_region = str(row[country_col]).strip().upper()
+                    if code in curr_region or curr_region in code:
+                        tt = str(row[transit_col]).strip()
+                        if tt and tt.lower() != 'nan':
+                            # Normalize to BSD
+                            tt = tt.replace('working days', 'BSD').replace('days', 'BSD').replace('day', 'BSD')
+                            return tt
+    except:
+        pass
+    
+    # Fallback to default mapping
+    code = str(target_country).strip().upper()
+    return VN_TRANSIT_TIME_MAP.get(code, '5-12 BSD')
 
 # ✅ TELEGRAM HELPER BASIC
 def send_telegram_notification(chat_id, text):
@@ -2927,12 +2959,12 @@ def pricing_calculate_all():
                     if is_cn_mode:
                         tt = get_transit_time_cn(df, country_val)
                         if tt:
-                            # ✅ Normalize Chinese -> English
-                            transit_time = tt.replace('工作日', ' days').replace('天', ' days')
+                            # ✅ Normalize Chinese -> BSD
+                            transit_time = tt.replace('工作日', ' BSD').replace('天', ' BSD')
                         else:
                             transit_time = "N/A"
                     else:
-                        transit_time = get_transit_time_vn(country_val)
+                        transit_time = get_transit_time_vn(df, country_val)
                 else:
                     freight = "Lỗi Sheet"
             else:

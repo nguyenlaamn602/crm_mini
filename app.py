@@ -141,8 +141,8 @@ USER_DEPARTMENTS = ["Sale", "Customer Services", "Operation", "Finance", "HR", "
 CORP_DEPARTMENTS = ["Sale", "Customer Services", "Operation", "Finance", "HR", "Marketing", "Quotation & Foreign Affairs"]
 DEPARTMENT_TASK_DEPARTMENTS = ["Sale", "Customer Services", "Operation", "Finance", "HR", "Marketing", "Quotation & Foreign Affairs"]
 
-# ✅ UNIFIED STATUSES (Gộp status) - Added "waiting"
-UNIFIED_STATUSES = ["todo", "waiting", "doing", "done", "overdue", "cancelled"]
+# ✅ UNIFIED STATUSES (Gộp status) - Thứ tự: todo, doing, waiting, done, overdue, cancelled
+UNIFIED_STATUSES = ["todo", "doing", "waiting", "done", "overdue", "cancelled"]
 
 # ✅ NEW: Customer Request Constants
 REQUEST_STATUSES = ["Request", "Thanh toán", "Lên đơn", "Trouble"]

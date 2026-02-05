@@ -4,28 +4,70 @@
 {% block content %}
 <style>
     /* Inline Editing Styling - HỖ TRỢ FLEXIBLE SIZE */
-    .inline-edit { background: transparent; border: 1px solid transparent; padding: 4px 8px; border-radius: 8px; transition: all 0.2s; width: auto; min-width: 100px; color: inherit; font-weight: inherit; display: inline-block; }
-    .inline-edit:hover { background: rgba(0,0,0,0.03); border-color: #e2e8f0; }
-    .inline-edit:focus { background: #fff; border-color: #4361ee; outline: none; box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1); }
-    .save-status { font-size: 0.75rem; display: none; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    .spinner-save { animation: spin 1s linear infinite; display: inline-block; }
+    .inline-edit {
+        background: transparent;
+        border: 1px solid transparent;
+        padding: 4px 8px;
+        border-radius: 8px;
+        transition: all 0.2s;
+        width: auto;
+        min-width: 100px;
+        color: inherit;
+        font-weight: inherit;
+        display: inline-block;
+    }
 
-    .activity-header-btn { border-radius: 10px; padding: 8px 18px; font-weight: 600; font-size: 0.85rem; }
+    .inline-edit:hover {
+        background: rgba(0, 0, 0, 0.03);
+        border-color: #e2e8f0;
+    }
+
+    .inline-edit:focus {
+        background: #fff;
+        border-color: #4361ee;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.1);
+    }
+
+    .save-status {
+        font-size: 0.75rem;
+        display: none;
+    }
+
+    @keyframes spin {
+        from {
+            transform: rotate(0deg);
+        }
+
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .spinner-save {
+        animation: spin 1s linear infinite;
+        display: inline-block;
+    }
+
+    .activity-header-btn {
+        border-radius: 10px;
+        padding: 8px 18px;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
 </style>
 
 <div class="container-fluid p-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="d-flex align-items-center gap-3">
-            <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-4" style="width: 55px; height: 55px;">
+            <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-4"
+                style="width: 55px; height: 55px;">
                 {{ lead.full_name[0].upper() }}
             </div>
             <div class="d-flex flex-column">
-                <input type="text" class="inline-edit fw-bold fs-3 text-dark mb-0"
-                       value="{{ lead.full_name }}" data-field="full_name"
-                       onblur="autoSave(this)"
-                       oninput="this.style.width = ((this.value.length + 1) * 18) + 'px'"
-                       id="name-input">
+                <input type="text" class="inline-edit fw-bold fs-3 text-dark mb-0" value="{{ lead.full_name }}"
+                    data-field="full_name" onblur="autoSave(this)"
+                    oninput="this.style.width = ((this.value.length + 1) * 18) + 'px'" id="name-input">
                 <div class="d-flex align-items-center gap-2">
                     <small class="text-muted">ID: {{ lead.psid }}</small>
                     <span id="save-indicator" class="save-status text-success">
@@ -37,7 +79,8 @@
 
         <div class="d-flex gap-2">
             <a href="/sector/{{ lead.sector }}" class="btn btn-light rounded-pill px-4">Back</a>
-            <form action="/customer/delete/{{ lead.psid }}" method="POST" onsubmit="return confirm('Permanently delete this profile?');">
+            <form action="/customer/delete/{{ lead.psid }}" method="POST"
+                onsubmit="return confirm('Permanently delete this profile?');">
                 <button type="submit" class="btn btn-outline-danger rounded-pill px-4">Delete Profile</button>
             </form>
         </div>
@@ -51,26 +94,32 @@
                 <div class="mb-4">
                     <label class="text-muted small d-block mb-1">PHONE / USERNAME</label>
                     <input type="text" class="inline-edit fw-bold text-primary p-0 fs-5" style="width: 100%;"
-                           value="{{ lead.phone_number if lead.phone_number != 'N/A' else '' }}"
-                           placeholder="Enter phone..." data-field="phone_number" onblur="autoSave(this)">
+                        value="{{ lead.phone_number if lead.phone_number != 'N/A' else '' }}"
+                        placeholder="Enter phone..." data-field="phone_number" onblur="autoSave(this)">
                 </div>
 
                 <div class="mb-4">
                     <label class="text-muted small d-block mb-1">SECTOR</label>
-                    <select class="form-select border-0 bg-light rounded-3 fw-semibold" data-field="sector" onchange="autoSave(this)">
-                        <option value="Pod_Drop" {% if lead.sector == 'Pod_Drop' %}selected{% endif %}>Pod / Drop</option>
-                        <option value="Express" {% if lead.sector == 'Express' %}selected{% endif %}>Express</option>
-                        <option value="Warehouse" {% if lead.sector == 'Warehouse' %}selected{% endif %}>Warehouse</option>
+                    <select class="form-select border-0 bg-light rounded-3 fw-semibold" data-field="sector"
+                        onchange="autoSave(this)">
+                        <option value="Pod_Drop" {% if lead.sector=='Pod_Drop' %}selected{% endif %}>Pod / Drop</option>
+                        <option value="Express" {% if lead.sector=='Express' %}selected{% endif %}>Express</option>
+                        <option value="Warehouse" {% if lead.sector=='Warehouse' %}selected{% endif %}>Warehouse
+                        </option>
                     </select>
                 </div>
 
                 <div class="mb-4">
                     <label class="text-muted small d-block mb-1">STATUS</label>
-                    <select class="form-select border-0 bg-warning bg-opacity-10 text-dark rounded-3 fw-bold" data-field="status" onchange="autoSave(this)">
-                        <option value="Khách Mới" {% if lead.status == 'Khách Mới' %}selected{% endif %}>New Customer</option>
-                        <option value="Khách hàng tiềm năng" {% if lead.status == 'Khách hàng tiềm năng' %}selected{% endif %}>Potential</option>
-                        <option value="Khách Vip" {% if lead.status == 'Khách Vip' %}selected{% endif %}>VIP</option>
-                        <option value="Khách không đi" {% if lead.status == 'Khách không đi' %}selected{% endif %}>No-show</option>
+                    <select class="form-select border-0 bg-warning bg-opacity-10 text-dark rounded-3 fw-bold"
+                        data-field="status" onchange="autoSave(this)">
+                        <option value="Khách Mới" {% if lead.status=='Khách Mới' %}selected{% endif %}>New Customer
+                        </option>
+                        <option value="Khách hàng tiềm năng" {% if lead.status=='Khách hàng tiềm năng' %}selected{%
+                            endif %}>Potential</option>
+                        <option value="Khách Vip" {% if lead.status=='Khách Vip' %}selected{% endif %}>VIP</option>
+                        <option value="Khách không đi" {% if lead.status=='Khách không đi' %}selected{% endif %}>No-show
+                        </option>
                     </select>
                 </div>
 
@@ -78,96 +127,97 @@
                 <div class="mb-4">
                     <label class="text-muted small d-block mb-1">ASSIGNED STAFF</label>
                     {% if current_user.role in ['admin', 'superadmin'] %}
-                        <!-- Admin/Superadmin can change assignee -->
-                        <select class="form-select border-0 bg-info bg-opacity-10 text-dark rounded-3 fw-bold" data-field="assigned_to" onchange="autoSave(this)">
-                            <option value="">-- Unassigned --</option>
-                            {% for u in users_list %}
-                                <option value="{{ u._id }}" {% if lead.assigned_to|string == u._id|string %}selected{% endif %}>
-                                    {{ u.username }}
-                                </option>
-                            {% endfor %}
-                        </select>
+                    <!-- Admin/Superadmin can change assignee -->
+                    <select class="form-select border-0 bg-info bg-opacity-10 text-dark rounded-3 fw-bold"
+                        data-field="assigned_to" onchange="autoSave(this)">
+                        <option value="">-- Unassigned --</option>
+                        {% for u in users_list %}
+                        <option value="{{ u._id }}" {% if lead.assigned_to|string==u._id|string %}selected{% endif %}>
+                            {{ u.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
                     {% else %}
-                        <!-- CSKH/Sale View -->
-                        {% if lead.assigned_to %}
-                            <!-- Display Name lookup tricky without map, but we can iterate user list passed from backend -->
-                            {% set assigned_name = "Unknown" %}
-                            {% for u in users_list %}
-                                {% if lead.assigned_to|string == u._id|string %}
-                                    {% set assigned_name = u.username %}
-                                {% endif %}
-                            {% endfor %}
-                            
-                            <div class="d-flex align-items-center gap-2">
-                                <div class="fw-bold text-dark px-2 py-2 bg-light rounded-3 flex-grow-1">
-                                    <i class="bi bi-person-check-fill text-success me-2"></i> {{ assigned_name }}
-                                </div>
-                                
-                                {% if lead.assigned_to|string == current_user.id|string %}
-                                    <button onclick="unclaimLead()" class="btn btn-danger bg-opacity-10 text-danger border-danger border-opacity-25 rounded-3 py-2 px-3 fw-bold" style="font-size: 0.85rem;">
-                                        <i class="bi bi-x-circle-fill me-1"></i> Hủy
-                                    </button>
-                                {% endif %}
-                            </div>
-                        {% else %}
-                            <!-- Unassigned: Show Claim Button -->
-                             {% if current_user.department == 'CSKH/Sale' %}
-                                <button onclick="claimLead()" class="btn btn-outline-primary w-100 rounded-3 border-2 fw-bold">
-                                    <i class="bi bi-hand-index-thumb me-1"></i> Receive Lead (Nhận)
-                                </button>
-                             {% else %}
-                                <div class="text-muted fst-italic px-2">Not assigned</div>
-                             {% endif %}
+                    <!-- CSKH/Sale View -->
+                    {% if lead.assigned_to %}
+                    <!-- Display Name lookup tricky without map, but we can iterate user list passed from backend -->
+                    {% set assigned_name = "Unknown" %}
+                    {% for u in users_list %}
+                    {% if lead.assigned_to|string == u._id|string %}
+                    {% set assigned_name = u.username %}
+                    {% endif %}
+                    {% endfor %}
+
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="fw-bold text-dark px-2 py-2 bg-light rounded-3 flex-grow-1">
+                            <i class="bi bi-person-check-fill text-success me-2"></i> {{ assigned_name }}
+                        </div>
+
+                        {% if lead.assigned_to|string == current_user.id|string %}
+                        <button onclick="unclaimLead()"
+                            class="btn btn-danger bg-opacity-10 text-danger border-danger border-opacity-25 rounded-3 py-2 px-3 fw-bold"
+                            style="font-size: 0.85rem;">
+                            <i class="bi bi-x-circle-fill me-1"></i> Release
+                        </button>
                         {% endif %}
+                    </div>
+                    {% else %}
+                    <!-- Unassigned: Show Claim Button -->
+                    {% if current_user.department in ['Customer Services', 'Sale'] %}
+                    <button onclick="claimLead()" class="btn btn-outline-primary w-100 rounded-3 border-2 fw-bold">
+                        <i class="bi bi-hand-index-thumb me-1"></i> Claim Lead
+                    </button>
+                    {% else %}
+                    <div class="text-muted fst-italic px-2">Not assigned</div>
+                    {% endif %}
+                    {% endif %}
                     {% endif %}
                 </div>
 
                 {# =========================
-                   ✅ SOURCE: Pancake link
-                   Format: https://pancake.vn/{page_username}?c_id={conversation_id}
-                   ========================= #}
+                ✅ SOURCE: Pancake link
+                Format: https://pancake.vn/{page_username}?c_id={conversation_id}
+                ========================= #}
 
                 {% set is_pancake = (lead.source_platform and ('Pancake' in lead.source_platform)) %}
                 {% set has_pancake_link = (lead.page_username and lead.conversation_id) %}
                 {% if is_pancake and has_pancake_link %}
-                    {% set pancake_url = "https://pancake.vn/" ~ lead.page_username ~ "?c_id=" ~ lead.conversation_id %}
+                {% set pancake_url = "https://pancake.vn/" ~ lead.page_username ~ "?c_id=" ~ lead.conversation_id %}
                 {% else %}
-                    {% set pancake_url = "" %}
+                {% set pancake_url = "" %}
                 {% endif %}
 
                 <div class="pt-3 border-top mb-3">
                     <label class="text-muted small d-block">SOURCE</label>
 
                     {% if is_pancake and has_pancake_link %}
-                        <a href="{{ pancake_url }}" target="_blank" class="text-decoration-none">
-                            <span class="badge bg-secondary-subtle text-secondary border px-2">
-                                {{ lead.source_platform }}
-                                <i class="bi bi-box-arrow-up-right ms-1"></i>
-                            </span>
-                        </a>
-                    {% else %}
+                    <a href="{{ pancake_url }}" target="_blank" class="text-decoration-none">
                         <span class="badge bg-secondary-subtle text-secondary border px-2">
                             {{ lead.source_platform }}
+                            <i class="bi bi-box-arrow-up-right ms-1"></i>
                         </span>
+                    </a>
+                    {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary border px-2">
+                        {{ lead.source_platform }}
+                    </span>
                     {% endif %}
                 </div>
 
                 {% if is_pancake %}
                 <div class="d-grid mt-2">
                     {% if has_pancake_link %}
-                        <a href="{{ pancake_url }}"
-                           target="_blank"
-                           class="btn btn-success rounded-pill fw-bold shadow-sm py-2">
-                            <i class="bi bi-chat-dots-fill me-2"></i>Open in Pancake
-                        </a>
-                        <div class="text-muted small mt-2 text-center">
-                            {{ lead.page_username }} • c_id={{ lead.conversation_id }}
-                        </div>
+                    <a href="{{ pancake_url }}" target="_blank"
+                        class="btn btn-success rounded-pill fw-bold shadow-sm py-2">
+                        <i class="bi bi-chat-dots-fill me-2"></i>Open in Pancake
+                    </a>
+                    <div class="text-muted small mt-2 text-center">
+                        {{ lead.page_username }} • c_id={{ lead.conversation_id }}
+                    </div>
                     {% else %}
-                        <a href="/sync-now"
-                           class="btn btn-outline-secondary rounded-pill py-2">
-                            <i class="bi bi-arrow-repeat me-2"></i>Sync now (Pancake)
-                        </a>
+                    <a href="/sync-now" class="btn btn-outline-secondary rounded-pill py-2">
+                        <i class="bi bi-arrow-repeat me-2"></i>Sync now (Pancake)
+                    </a>
                     {% endif %}
                 </div>
                 {% endif %}
@@ -181,10 +231,12 @@
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h5 class="fw-bold mb-0">Activity Log</h5>
                         <div class="d-flex gap-2">
-                            <button class="btn btn-primary activity-header-btn shadow-sm" data-bs-toggle="modal" data-bs-target="#activityModal">
+                            <button class="btn btn-primary activity-header-btn shadow-sm" data-bs-toggle="modal"
+                                data-bs-target="#activityModal">
                                 <i class="bi bi-calendar-plus me-1"></i> Activity
                             </button>
-                            <button class="btn btn-outline-primary activity-header-btn" data-bs-toggle="modal" data-bs-target="#noteModal">
+                            <button class="btn btn-outline-primary activity-header-btn" data-bs-toggle="modal"
+                                data-bs-target="#noteModal">
                                 <i class="bi bi-journal-text me-1"></i> Notes
                             </button>
                         </div>
@@ -206,20 +258,28 @@
                             <tbody>
                                 {% for task in tasks %}
                                 <tr>
-                                    <td class="ps-4"><span class="badge bg-primary-subtle text-primary rounded-pill">Task</span></td>
-                                    <td><div class="fw-semibold text-dark">{{ task.todo_content }}</div></td>
+                                    <td class="ps-4"><span
+                                            class="badge bg-primary-subtle text-primary rounded-pill">Task</span></td>
+                                    <td>
+                                        <div class="fw-semibold text-dark">{{ task.todo_content }}</div>
+                                    </td>
                                     <td class="small">{{ task.assignee }}</td>
                                     <td class="small text-muted">{{ task.created_at.strftime('%d/%m/%y %H:%M') }}</td>
                                     <td class="pe-4 text-end">
-                                        <span class="badge {% if task.status == 'Done' %}bg-success{% else %}bg-warning{% endif %} rounded-pill">{{ task.status }}</span>
+                                        <span
+                                            class="badge {% if task.status == 'Done' %}bg-success{% else %}bg-warning{% endif %} rounded-pill">{{
+                                            task.status }}</span>
                                     </td>
                                 </tr>
                                 {% endfor %}
 
                                 {% for note in notes %}
                                 <tr>
-                                    <td class="ps-4"><span class="badge bg-info-subtle text-info rounded-pill">Note</span></td>
-                                    <td colspan="2"><div class="text-dark">{{ note.content }}</div></td>
+                                    <td class="ps-4"><span
+                                            class="badge bg-info-subtle text-info rounded-pill">Note</span></td>
+                                    <td colspan="2">
+                                        <div class="text-dark">{{ note.content }}</div>
+                                    </td>
                                     <td class="small text-muted">{{ note.created_at.strftime('%d/%m/%y %H:%M') }}</td>
                                     <td class="pe-4 text-end text-muted small">Log</td>
                                 </tr>
@@ -254,7 +314,8 @@
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">TODO CONTENT</label>
-                        <textarea name="todo_content" class="form-control rounded-3" rows="3" required placeholder="What needs to be done?"></textarea>
+                        <textarea name="todo_content" class="form-control rounded-3" rows="3" required
+                            placeholder="What needs to be done?"></textarea>
                     </div>
 
                     {% if current_user.role in ['admin', 'superadmin'] and users_list %}
@@ -262,7 +323,8 @@
                         <label class="form-label small fw-bold text-muted">ASSIGNEE</label>
                         <select name="assigned_user_id" class="form-select rounded-3">
                             {% for u in users_list %}
-                            <option value="{{ u._id }}" {% if u._id|string == current_user.id|string %}selected{% endif %}>
+                            <option value="{{ u._id }}" {% if u._id|string==current_user.id|string %}selected{% endif
+                                %}>
                                 {{ u.username }}{% if u._id|string == current_user.id|string %} (You){% endif %}
                             </option>
                             {% endfor %}
@@ -272,7 +334,8 @@
                     {% else %}
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">ASSIGNEE</label>
-                        <input type="text" name="assignee" class="form-control rounded-3" placeholder="Enter staff name">
+                        <input type="text" name="assignee" class="form-control rounded-3"
+                            placeholder="Enter staff name">
                     </div>
                     {% endif %}
 
@@ -294,7 +357,8 @@
                 </div>
 
                 <div class="modal-footer border-0 pb-4 pe-4">
-                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-light rounded-pill px-4"
+                        data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary rounded-pill px-4">Save Activity</button>
                 </div>
             </form>
@@ -315,11 +379,13 @@
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-muted">NOTE CONTENT</label>
-                        <textarea name="content" class="form-control rounded-3" rows="4" required placeholder="Type important notes about this customer..."></textarea>
+                        <textarea name="content" class="form-control rounded-3" rows="4" required
+                            placeholder="Type important notes about this customer..."></textarea>
                     </div>
                 </div>
                 <div class="modal-footer border-0 pb-4 pe-4">
-                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-light rounded-pill px-4"
+                        data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-info text-white rounded-pill px-4">Save Note</button>
                 </div>
             </form>
@@ -329,9 +395,9 @@
 
 <script>
     // Tự động căn chỉnh chiều rộng input khi trang vừa load xong
-    window.onload = function() {
+    window.onload = function () {
         const input = document.getElementById('name-input');
-        if(input) input.style.width = ((input.value.length + 1) * 18) + 'px';
+        if (input) input.style.width = ((input.value.length + 1) * 18) + 'px';
     };
 
     async function autoSave(element) {
@@ -357,13 +423,13 @@
             indicator.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error!';
         }
     }
-    
+
     // ✅ Function to claim lead from detail page (button)
     async function claimLead() {
-        if (!confirm("Bạn có chắc muốn nhận khách này không?")) return;
+        if (!confirm("Are you sure you want to claim this lead?")) return;
         const formData = new FormData();
         formData.append('assigned_user_id', '{{ current_user.id }}');
-        
+
         try {
             const response = await fetch('/customer/assign/{{ lead.psid }}', {
                 method: 'POST',
@@ -374,20 +440,20 @@
             if (result.status === 'success') {
                 location.reload();
             } else {
-                alert('Không thể nhận khách: ' + (result.message || 'Unknown error'));
+                alert('Cannot claim lead: ' + (result.message || 'Unknown error'));
             }
-        } catch(e) {
-            alert('Lỗi kết nối');
+        } catch (e) {
+            alert('Connection error');
         }
     }
 
     // ✅ NEW: Function to unclaim/cancel lead
     async function unclaimLead() {
-        if (!confirm("Bạn muốn hủy phụ trách khách này?")) return;
+        if (!confirm("Are you sure you want to release this lead?")) return;
         const formData = new FormData();
         // Send empty assigned_user_id to trigger unassign logic in backend
-        formData.append('assigned_user_id', ''); 
-        
+        formData.append('assigned_user_id', '');
+
         try {
             const response = await fetch('/customer/assign/{{ lead.psid }}', {
                 method: 'POST',
@@ -398,10 +464,10 @@
             if (result.status === 'success') {
                 location.reload();
             } else {
-                alert('Lỗi: ' + (result.message || 'Không thể hủy'));
+                alert('Error: ' + (result.message || 'Cannot release'));
             }
-        } catch(e) {
-            alert('Lỗi kết nối');
+        } catch (e) {
+            alert('Connection error');
         }
     }
 </script>

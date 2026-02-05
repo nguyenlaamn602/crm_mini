@@ -5,16 +5,19 @@
 <div class="container-fluid p-0">
     <header class="mb-5 d-flex justify-content-between align-items-center">
         <h1 class="fw-bold text-dark">Lead Dashboard</h1>
-        
+
         <!-- ✅ Button Update Telegram -->
-        <button class="btn btn-outline-primary rounded-pill btn-sm" data-bs-toggle="modal" data-bs-target="#telegramModal">
+        <button class="btn btn-outline-primary rounded-pill btn-sm" data-bs-toggle="modal"
+            data-bs-target="#telegramModal">
             <i class="bi bi-telegram me-1"></i> Connect Telegram
         </button>
     </header>
 
     <div class="row g-4 mb-5">
         <div class="col-xl-4 col-md-6">
-            <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #4361ee !important; cursor: pointer;" onclick="location.href='/sector/Pod_Drop'">
+            <div class="card border-0 shadow-sm p-4 rounded-4 h-100"
+                style="border-left: 5px solid #4361ee !important; cursor: pointer;"
+                onclick="location.href='/sector/Pod_Drop'">
                 <div class="d-flex align-items-center mb-3">
                     <div class="bg-primary bg-opacity-10 p-3 rounded-3 text-primary me-3">
                         <i class="bi bi-box-seam fs-3"></i>
@@ -27,7 +30,9 @@
         </div>
 
         <div class="col-xl-4 col-md-6">
-            <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #0ea5e9 !important; cursor: pointer;" onclick="location.href='/sector/Express'">
+            <div class="card border-0 shadow-sm p-4 rounded-4 h-100"
+                style="border-left: 5px solid #0ea5e9 !important; cursor: pointer;"
+                onclick="location.href='/sector/Express'">
                 <div class="d-flex align-items-center mb-3">
                     <div class="bg-info bg-opacity-10 p-3 rounded-3 text-info me-3">
                         <i class="bi bi-lightning-charge fs-3"></i>
@@ -40,7 +45,9 @@
         </div>
 
         <div class="col-xl-4 col-md-6">
-            <div class="card border-0 shadow-sm p-4 rounded-4 h-100" style="border-left: 5px solid #10b981 !important; cursor: pointer;" onclick="location.href='/sector/Warehouse'">
+            <div class="card border-0 shadow-sm p-4 rounded-4 h-100"
+                style="border-left: 5px solid #10b981 !important; cursor: pointer;"
+                onclick="location.href='/sector/Warehouse'">
                 <div class="d-flex align-items-center mb-3">
                     <div class="bg-success bg-opacity-10 p-3 rounded-3 text-success me-3">
                         <i class="bi bi-house-door fs-3"></i>
@@ -56,32 +63,36 @@
     <!-- ✅ TEAM PERFORMANCE CHART - HIDDEN FOR USERS -->
     {% if current_user.role in ['superadmin', 'admin'] %}
     <div class="card border-0 shadow-sm rounded-4 mb-4">
-        <div class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div
+            class="card-header bg-white border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="fw-bold mb-0">📊 Team Task Performance</h5>
-            
+
             <!-- ✅ CHART FILTER BUTTONS -->
             <div class="btn-group btn-group-sm shadow-sm" role="group">
-                <button type="button" class="btn btn-outline-secondary active fw-bold" onclick="filterChart('All', this)">All</button>
+                <button type="button" class="btn btn-outline-secondary active fw-bold"
+                    onclick="filterChart('All', this)">All</button>
                 {% for dept in departments %}
-                <button type="button" class="btn btn-outline-secondary fw-bold" onclick="filterChart('{{ dept }}', this)">{{ dept }}</button>
+                <button type="button" class="btn btn-outline-secondary fw-bold"
+                    onclick="filterChart('{{ dept }}', this)">{{ dept }}</button>
                 {% endfor %}
             </div>
         </div>
-        
+
         <div class="card-body p-4">
             <!-- Container của Chart: Fixed Height -->
             <div style="position: relative; height: 400px; width: 100%;">
                 <canvas id="teamTaskChart"></canvas>
-                
+
                 <!-- Hiển thị khi không có data -->
-                <div id="noDataMessage" style="display:none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #aaa;">
+                <div id="noDataMessage"
+                    style="display:none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #aaa;">
                     <i class="bi bi-bar-chart fs-1"></i>
-                    <p>Chưa có dữ liệu task cho phòng ban này</p>
+                    <p>No task data available for this department</p>
                 </div>
             </div>
-            
+
             <div class="text-center text-muted small mt-2 fst-italic">
-                <i class="bi bi-info-circle me-1"></i> Click vào cột hoặc tên nhân viên để xem chi tiết
+                <i class="bi bi-info-circle me-1"></i> Click on a column or staff name to view details
             </div>
         </div>
     </div>
@@ -99,15 +110,15 @@
             <form action="/user/update-telegram" method="POST">
                 <div class="modal-body p-4">
                     <div class="alert alert-light border small text-muted mb-3">
-                        <strong>Hướng dẫn:</strong><br>
-                        1. Chat với Bot: <a href="https://t.me/userinfobot" target="_blank" class="fw-bold">@userinfobot</a><br>
-                        2. Copy dòng "Id" (số)<br>
-                        3. Dán vào ô bên dưới
+                        <strong>Instructions:</strong><br>
+                        1. Chat with Bot: <a href="https://t.me/userinfobot" target="_blank"
+                            class="fw-bold">@userinfobot</a><br>
+                        2. Copy the "Id" (number)<br>
+                        3. Paste it below
                     </div>
                     <label class="form-label fw-bold text-muted small">YOUR TELEGRAM CHAT ID</label>
-                    <input type="text" name="telegram_id" class="form-control rounded-3" 
-                           value="{{ current_user.telegram_chat_id or '' }}" 
-                           placeholder="Ex: 123456789">
+                    <input type="text" name="telegram_id" class="form-control rounded-3"
+                        value="{{ current_user.telegram_chat_id or '' }}" placeholder="Ex: 123456789">
                 </div>
                 <div class="modal-footer border-0">
                     <button type="button" class="btn btn-secondary rounded-pill" data-bs-dismiss="modal">Close</button>
@@ -139,7 +150,7 @@
     // Global Chart Instance
     let myTeamChart = null;
 
-    document.addEventListener("DOMContentLoaded", function() {
+    document.addEventListener("DOMContentLoaded", function () {
         // Initial Render: Show All (Only if chart exists i.e. user is admin)
         if (document.getElementById('teamTaskChart')) {
             renderChart(SERVER_DATA);
@@ -172,7 +183,7 @@
 
         if (ctxElement) {
             const ctx = ctxElement.getContext('2d');
-            
+
             myTeamChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -224,25 +235,25 @@
                         intersect: false,
                     },
                     scales: {
-                        x: { 
-                            stacked: false, 
+                        x: {
+                            stacked: false,
                             grid: { display: false },
                             ticks: {
                                 font: { weight: 'bold' }, // Tên đậm lên
                                 cursor: 'pointer'
                             }
                         },
-                        y: { 
-                            stacked: true, 
+                        y: {
+                            stacked: true,
                             beginAtZero: true,
-                            ticks: { stepSize: 1, precision: 0 } 
+                            ticks: { stepSize: 1, precision: 0 }
                         }
                     },
                     plugins: {
                         legend: { position: 'top' },
                         tooltip: {
                             callbacks: {
-                                title: function(context) { return context[0].label; }
+                                title: function (context) { return context[0].label; }
                             }
                         }
                     },
@@ -262,7 +273,7 @@
                         const activeEls = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
                         if (activeEls.length > 0) {
                             dataIndex = activeEls[0].index;
-                        } 
+                        }
                         // 2. Nếu không trúng cột, thử lấy phần tử gần nhất theo trục X (để bắt click vào tên/label)
                         else {
                             const points = chart.getElementsAtEventForMode(e, 'nearest', { intersect: false, axis: 'x' }, true);
@@ -306,7 +317,7 @@
     // Sync logic Toast
     let lastSync = 0;
     const toastEl = document.getElementById('syncToast');
-    if(toastEl){
+    if (toastEl) {
         const toast = new bootstrap.Toast(toastEl);
         setInterval(() => {
             fetch('/sync-status').then(r => r.json()).then(data => {
@@ -323,11 +334,13 @@
 <style>
     .hover-shadow:hover {
         transform: translateY(-2px);
-        box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important;
+        box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
     }
+
     .transition {
         transition: all 0.2s ease-in-out;
     }
+
     /* Con trỏ chuột khi hover vào canvas để biết là click được */
     #teamTaskChart {
         cursor: pointer;

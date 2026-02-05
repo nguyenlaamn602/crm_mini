@@ -10,7 +10,8 @@
         </div>
         <div>
             <!-- Button trigger modal -->
-            <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#addUserModal">
+            <button type="button" class="btn btn-primary rounded-pill px-4 shadow-sm" data-bs-toggle="modal"
+                data-bs-target="#addUserModal">
                 <i class="bi bi-person-plus me-2"></i>Add New User
             </button>
         </div>
@@ -18,15 +19,15 @@
 
     <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div id="flash-messages">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} rounded-4 mb-4 shadow-sm border-0 fade show" role="alert">
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
+    {% if messages %}
+    <div id="flash-messages">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} rounded-4 mb-4 shadow-sm border-0 fade show" role="alert">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
     {% endwith %}
 
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
@@ -49,7 +50,8 @@
                         <td class="ps-4 text-muted fw-bold">{{ loop.index }}</td>
                         <td>
                             <div class="d-flex align-items-center">
-                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; font-weight: bold;">
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3"
+                                    style="width: 40px; height: 40px; font-weight: bold;">
                                     {{ user.username[0].upper() }}
                                 </div>
                                 <div>
@@ -60,25 +62,29 @@
                         </td>
                         <td>
                             {% if user.role == 'superadmin' %}
-                                <span class="badge bg-dark text-white border border-dark rounded-pill px-3">Superadmin</span>
+                            <span
+                                class="badge bg-dark text-white border border-dark rounded-pill px-3">Superadmin</span>
                             {% elif user.role == 'admin' %}
-                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3">Admin</span>
+                            <span
+                                class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-3">Admin</span>
                             {% else %}
-                                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3">User</span>
+                            <span
+                                class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3">User</span>
                             {% endif %}
                         </td>
                         <td>
                             <!-- ✅ Display multiple departments -->
                             {% if user.departments %}
-                                {% for dept in user.departments %}
-                                    <span class="badge bg-light text-dark border me-1 mb-1">{{ dept }}</span>
-                                {% endfor %}
+                            {% for dept in user.departments %}
+                            <span class="badge bg-light text-dark border me-1 mb-1">{{ dept }}</span>
+                            {% endfor %}
                             {% else %}
-                                <span class="badge bg-light text-muted border">-- None --</span>
+                            <span class="badge bg-light text-muted border">-- None --</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            <span class="badge bg-light text-dark border rounded-pill px-3 fw-bold">{{ user.pending_tasks }} Pending</span>
+                            <span class="badge bg-light text-dark border rounded-pill px-3 fw-bold">{{
+                                user.pending_tasks }} Pending</span>
                         </td>
                         <td class="text-end pe-4">
                             <!-- stopPropagation to prevent row click -->
@@ -92,9 +98,12 @@
                                             <i class="bi bi-eye me-2"></i>View Detail
                                         </a>
                                     </li>
-                                    <li><hr class="dropdown-divider"></li>
                                     <li>
-                                        <form action="/admin/user/delete/{{ user.id }}" method="POST" onsubmit="return confirm('Delete this user?');" class="m-0">
+                                        <hr class="dropdown-divider">
+                                    </li>
+                                    <li>
+                                        <form action="/admin/user/delete/{{ user.id }}" method="POST"
+                                            onsubmit="return confirm('Delete this user?');" class="m-0">
                                             <button type="submit" class="dropdown-item text-danger rounded-2">
                                                 <i class="bi bi-trash me-2"></i>Delete User
                                             </button>
@@ -123,38 +132,44 @@
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">USERNAME</label>
-                        <input type="text" name="username" class="form-control rounded-3" required placeholder="Enter username">
+                        <input type="text" name="username" class="form-control rounded-3" required
+                            placeholder="Enter username">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">PASSWORD</label>
-                        <input type="password" name="password" class="form-control rounded-3" required placeholder="Enter password">
+                        <input type="password" name="password" class="form-control rounded-3" required
+                            placeholder="Enter password">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">DEPARTMENT</label>
-                        
+
                         <!-- ✅ Changed to Checklist for consistent UI -->
                         <div class="border rounded-3 p-3 bg-light" style="max-height: 200px; overflow-y: auto;">
                             {% if current_user.role == 'superadmin' %}
-                                {% for dept in departments %}
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}" id="add_u_dept_{{ loop.index }}">
-                                    <label class="form-check-label" for="add_u_dept_{{ loop.index }}">{{ dept }}</label>
-                                </div>
-                                {% endfor %}
+                            {% for dept in departments %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}"
+                                    id="add_u_dept_{{ loop.index }}">
+                                <label class="form-check-label" for="add_u_dept_{{ loop.index }}">{{ dept }}</label>
+                            </div>
+                            {% endfor %}
                             {% else %}
-                                {% for dept in current_user.departments %}
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}" id="add_u_dept_{{ loop.index }}">
-                                    <label class="form-check-label" for="add_u_dept_{{ loop.index }}">{{ dept }}</label>
-                                </div>
-                                {% endfor %}
+                            {% for dept in current_user.departments %}
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}"
+                                    id="add_u_dept_{{ loop.index }}">
+                                <label class="form-check-label" for="add_u_dept_{{ loop.index }}">{{ dept }}</label>
+                            </div>
+                            {% endfor %}
                             {% endif %}
                         </div>
-                        <div class="form-text text-muted small mt-1">Chọn một hoặc nhiều phòng ban cho người dùng mới.</div>
+                        <div class="form-text text-muted small mt-1">Select one or more departments for the new user.
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
-                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4"
+                        data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create User</button>
                 </div>
             </form>
@@ -164,11 +179,11 @@
 
 <!-- Script to auto-dismiss alerts and form validation -->
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
+    document.addEventListener("DOMContentLoaded", function () {
         // Auto-dismiss alerts
-        setTimeout(function() {
+        setTimeout(function () {
             var alerts = document.querySelectorAll('.alert');
-            alerts.forEach(function(alert) {
+            alerts.forEach(function (alert) {
                 var bsAlert = new bootstrap.Alert(alert);
                 bsAlert.close();
             });
@@ -177,11 +192,11 @@
         // Client-side check for at least one department
         const addUserForm = document.getElementById('addUserForm');
         if (addUserForm) {
-            addUserForm.addEventListener('submit', function(e) {
+            addUserForm.addEventListener('submit', function (e) {
                 const checkboxes = this.querySelectorAll('input[name="departments"]:checked');
                 if (checkboxes.length === 0) {
                     e.preventDefault();
-                    alert('Vui lòng chọn ít nhất một phòng ban.');
+                    alert('Please select at least one department.');
                 }
             });
         }

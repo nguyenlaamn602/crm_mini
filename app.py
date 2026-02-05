@@ -137,9 +137,9 @@ LAST_SYNC_TIMESTAMP = time.time()
 # ---------------------------
 # CONSTANTS: Departments + Status
 # ---------------------------
-USER_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "CSKH/Sale", "Nhân sự", "Ngoại Giao"]
-CORP_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"]
-DEPARTMENT_TASK_DEPARTMENTS = ["Vận Hành", "Marketing", "Kế toán", "Nhân sự", "CSKH/Sale", "Ngoại giao"] # Same as corp for now
+USER_DEPARTMENTS = ["Sale", "Customer Services", "Operation", "Finance", "HR", "Marketing", "Quotation & Foreign Affairs"]
+CORP_DEPARTMENTS = ["Sale", "Customer Services", "Operation", "Finance", "HR", "Marketing", "Quotation & Foreign Affairs"]
+DEPARTMENT_TASK_DEPARTMENTS = ["Sale", "Customer Services", "Operation", "Finance", "HR", "Marketing", "Quotation & Foreign Affairs"]
 
 # ✅ UNIFIED STATUSES (Gộp status) - Added "waiting"
 UNIFIED_STATUSES = ["todo", "waiting", "doing", "done", "overdue", "cancelled"]
@@ -511,6 +511,63 @@ def calculate_price_for_row(row_data, price_df):
 
     except Exception as e:
         return f"Err: {str(e)}", "Err"
+
+# ✅ NEW: Transit Time Helper for CN Price Tables (Column C: 参考时效)
+def get_transit_time_cn(price_df, target_country):
+    """Extract transit time from CN price table. Column C contains 参考时效, Column B contains Country."""
+    try:
+        # Find header row
+        header_idx = -1
+        for r in range(min(20, len(price_df))):
+            row_vals = [str(x).strip() for x in price_df.iloc[r].values]
+            if any('国家' in x or '参考时效' in x for x in row_vals):
+                header_idx = r
+                break
+        
+        if header_idx == -1:
+            return None
+            
+        headers = [str(x).strip() for x in price_df.iloc[header_idx].values]
+        df = price_df.iloc[header_idx+1:].copy()
+        df.columns = headers
+        
+        # Find transit time column (参考时效)
+        transit_col = next((c for c in headers if '时效' in c or 'Transit' in c), None)
+        country_col = next((c for c in headers if '国家' in c or 'Country' in c), None)
+        
+        if not transit_col or not country_col:
+            return None
+        
+        # Normalize input country
+        target_cn = normalize_country(str(target_country).strip().upper())
+        
+        for _, row in df.iterrows():
+            curr_country = str(row[country_col]).strip()
+            # Split by comma/semicolon for countries like "美国,加拿大"
+            countries = [c.strip() for c in re.split(r'[,，、;]', curr_country)]
+            if target_cn in countries:
+                return str(row[transit_col]).strip()
+        
+        return None
+    except:
+        return None
+
+# ✅ NEW: Transit Time Helper for VN Price Tables (Transit time section)
+VN_TRANSIT_TIME_MAP = {
+    # Default mapping based on VN price table Transit time section
+    'EU': '5-12 working days', 'US': '5-12 working days', 'USA': '5-12 working days',
+    'MX': '5-12 working days', 'CA': '5-12 working days', 'AE': '5-12 working days', 
+    'NZ': '5-12 working days', 'AU': '5-12 working days', 'GB': '5-12 working days',
+    'UK': '5-12 working days', 'DE': '5-12 working days', 'FR': '5-12 working days',
+    'IT': '5-12 working days', 'ES': '5-12 working days', 'NL': '5-12 working days',
+    'HK': '3-5 working days', 'MY': '3-5 working days', 'SG': '3-5 working days',
+    'JP': '5-10 working days', 'KR': '5-10 working days',
+}
+
+def get_transit_time_vn(country_code):
+    """Get transit time for VN mode based on predefined mapping."""
+    code = str(country_code).strip().upper()
+    return VN_TRANSIT_TIME_MAP.get(code, '5-12 working days')
 
 # ✅ TELEGRAM HELPER BASIC
 def send_telegram_notification(chat_id, text):
@@ -928,7 +985,7 @@ def assign_lead(psid):
              db.leads.update_one({"psid": psid}, {"$unset": {"assigned_to": ""}, "$set": {"updated_at": now_dt()}})
         action_ok = True
         
-    elif current_user.department == 'CSKH/Sale' or current_user.role == 'user':
+    elif current_user.department in ['Customer Services', 'Sale'] or current_user.role == 'user':
         if new_assignee_id == str(current_user.id):
             db.leads.update_one({"psid": psid}, {"$set": {"assigned_to": ObjectId(current_user.id), "updated_at": now_dt()}})
             action_ok = True
@@ -1125,7 +1182,7 @@ def view_tasks():
     # --- 3. DYNAMIC QUERY BUILDER ---
     me = ObjectId(current_user.id)
 
-    def build_query(collection_name):
+    def build_query(collection_name, include_status=True):
         conditions = []
         # Role-based filters
         if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
@@ -1135,8 +1192,8 @@ def view_tasks():
             elif collection_name == 'customer_requests': conditions.append({"$or": [{"sender_name": current_user.username}, {"assigned_to": me}, {"assigned_to": {"$in": [me]}}, {"assignee": current_user.username}]})
         if collection_name == 'personal_tasks': conditions.append({"user_id": me})
 
-        # Common filters
-        if filter_status: conditions.append({"status": filter_status})
+        # Common filters - only include status if requested
+        if include_status and filter_status: conditions.append({"status": filter_status})
         if date_q: conditions.append(date_q)
 
         # Department filter
@@ -1171,23 +1228,23 @@ def view_tasks():
     }
     task_counts['all'] = sum(task_counts.values())
 
-    # ✅ NEW: Calculate status counts for horizontal tabs
+    # ✅ FIX: Calculate status counts WITHOUT status filter (use include_status=False)
     status_counts = {'all': 0}
+    # Build base queries WITHOUT status filter
+    base_q_customer = build_query('tasks', include_status=False)
+    base_q_corp = build_query('corp_tasks', include_status=False)
+    base_q_personal = build_query('personal_tasks', include_status=False)
+    base_q_dept = build_query('department_tasks', include_status=False)
+    base_q_request = build_query('customer_requests', include_status=False)
+    
+    # Add status filter for each specific status
+    def add_status_filter(q, status):
+        if q:
+            return {"$and": [q, {"status": status}]}
+        return {"status": status}
+    
     for s in UNIFIED_STATUSES:
         count = 0
-        # Count from all collections based on current filters (without status filter)
-        base_q_customer = build_query('tasks')
-        base_q_corp = build_query('corp_tasks')
-        base_q_personal = build_query('personal_tasks')
-        base_q_dept = build_query('department_tasks')
-        base_q_request = build_query('customer_requests')
-        
-        # Add status filter for this specific status
-        def add_status_filter(q, status):
-            if q:
-                return {"$and": [q, {"status": status}]}
-            return {"status": status}
-        
         if not filter_type or filter_type == 'customer':
             count += db.tasks.count_documents(add_status_filter(base_q_customer, s))
         if not filter_type or filter_type == 'corp':
@@ -2237,7 +2294,21 @@ def add_customer_request():
         "attachment": save_uploaded_file(request.files.get('attachment')) # ✅ Add Attachment
     })
     
-    flash("Đã tạo yêu cầu mới", "success")
+    # ✅ AUTO SEND TELEGRAM (Notify Assignees)
+    if assigned_to:
+        msg_text = (
+            f"🔔 <b>NEW REQUEST ASSIGNED</b>\n\n"
+            f"📝 <b>Content:</b> {content}\n"
+            f"👤 <b>Customer:</b> {norm_name or customer_name or 'N/A'}\n"
+            f"👤 <b>By:</b> {current_user.username}\n"
+            f"📋 <b>Type:</b> {business_type}"
+        )
+        users = list(db.users.find({"_id": {"$in": assigned_to}}))
+        for u in users:
+            if u.get("telegram_chat_id"):
+                send_telegram_notification(u.get("telegram_chat_id"), msg_text)
+    
+    flash("Request created successfully", "success")
     return redirect(url_for("view_tasks", type='request')) # ✅ Redirect to tasks view
 
 @app.route('/request/customer/detail/<id>')
@@ -2705,17 +2776,57 @@ def broadcast_page(): return render_template('broadcast.html')
 @app.route('/api/broadcast/pages')
 @login_required
 def api_broadcast_pages():
-    res = requests.get(f"{BASE_URL}/pages", params={"access_token": PANCAKE_USER_TOKEN})
-    return jsonify({"pages": res.json().get("pages", [])}) if res.status_code == 200 else (jsonify({"error": "Failed"}), 400)
+    """Lấy danh sách Pages từ Pancake - sử dụng đúng cấu trúc API response"""
+    try:
+        res = requests.get(f"{BASE_URL}/pages", params={"access_token": PANCAKE_USER_TOKEN}, timeout=30)
+        if res.status_code == 200:
+            # ✅ FIX: Pancake trả về categorized.activated + categorized.inactivated, không phải pages
+            cat = res.json().get("categorized", {})
+            pages = cat.get("activated", []) + cat.get("inactivated", [])
+            return jsonify({"pages": pages})
+        else:
+            log_to_file(f"[BROADCAST] Failed to fetch pages: {res.status_code} - {res.text[:200]}")
+            return jsonify({"error": "Failed to fetch pages", "status": res.status_code}), 400
+    except Exception as e:
+        log_to_file(f"[BROADCAST] Exception fetching pages: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/broadcast/conversations/<page_id>')
 @login_required
 def api_broadcast_conversations(page_id):
-    tr = requests.post(f"{BASE_URL}/pages/{page_id}/generate_page_access_token", params={"access_token": PANCAKE_USER_TOKEN, "page_id": page_id})
-    if tr.status_code != 200: return jsonify({"error": "Token failed"}), 400
-    ptk = tr.json().get("page_access_token")
-    cr = requests.get(f"{PUBLIC_V2}/pages/{page_id}/conversations", params={"page_access_token": ptk, "page_id": page_id, "type": "INBOX"})
-    return jsonify({"conversations": cr.json().get("conversations", []), "page_token": ptk}) if cr.status_code == 200 else (jsonify({"error": "Conv failed"}), 400)
+    """Lấy danh sách conversations từ một Page để broadcast"""
+    try:
+        # 1. Lấy page access token 
+        tr = requests.post(
+            f"{BASE_URL}/pages/{page_id}/generate_page_access_token", 
+            params={"access_token": PANCAKE_USER_TOKEN}, 
+            timeout=30
+        )
+        if tr.status_code != 200:
+            log_to_file(f"[BROADCAST] Token failed for page {page_id}: {tr.status_code}")
+            return jsonify({"error": "Token failed", "detail": tr.text[:200]}), 400
+            
+        ptk = tr.json().get("page_access_token")
+        if not ptk:
+            return jsonify({"error": "No page_access_token in response"}), 400
+        
+        # 2. Lấy conversations
+        cr = requests.get(
+            f"{PUBLIC_V2}/pages/{page_id}/conversations", 
+            params={"page_access_token": ptk, "type": "INBOX"},
+            timeout=30
+        )
+        if cr.status_code != 200:
+            log_to_file(f"[BROADCAST] Conversations failed for page {page_id}: {cr.status_code}")
+            return jsonify({"error": "Conv failed", "detail": cr.text[:200]}), 400
+            
+        return jsonify({
+            "conversations": cr.json().get("conversations", []), 
+            "page_token": ptk
+        })
+    except Exception as e:
+        log_to_file(f"[BROADCAST] Exception in conversations: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/broadcast/send', methods=['POST'])
 @login_required
@@ -2750,6 +2861,7 @@ def pricing_calculate_all():
     """Tính cước cho toàn bộ danh sách import"""
     try:
         data = request.json.get('data', [])
+        mode = request.json.get('mode', '')  # ✅ Get mode from frontend
         if not data: return jsonify({"status": "error", "message": "No data"}), 400
         
         # 1. Lấy file bảng giá mới nhất
@@ -2761,26 +2873,28 @@ def pricing_calculate_all():
         if not os.path.exists(file_path):
             return jsonify({"status": "error", "message": "Price Table File Lost"}), 404
 
+        # ✅ Detect mode if not provided (check if CN characters in filename)
+        is_cn_mode = 'china' in mode.lower() or 'cn' in mode.lower() or '云途' in latest_pt.get('filename', '')
+        
         # 2. Build Index: Scan ALL sheets for Transport Code
         sheet_index = index_price_table(file_path)
         sheet_cache = {} 
         results = []
         
         for row in data:
-            # ✅ LOGIC TÌM SHEET: Ưu tiên 'Service' > 'SERVICE CODE'
-            # Clean up whitespace in keys and values
+            # ✅ Clean up and get input values
             clean_row = {str(k).strip(): v for k, v in row.items()}
             
-            s_val = str(clean_row.get('Service', '')).strip()
-            sc_val = str(clean_row.get('SERVICE CODE', '')).strip()
+            # Get simplified input columns (Service, Country, Weight)
+            service_val = str(clean_row.get('Service', '')).strip()
+            country_val = str(clean_row.get('Country', clean_row.get('Quốc gia', ''))).strip()
+            weight_val = clean_row.get('Weight', clean_row.get('Cân nặng', 0))
             
-            # Use 'Service' column first (e.g., YTYCPREG)
-            service_code = s_val if s_val else sc_val
+            # ✅ AUTO-GENERATE SERVICE CODE: Service-Country-Weight
+            generated_service_code = f"{service_val}-{country_val}-{weight_val}"
             
-            # Map Keys: 'Quốc gia' -> 'Country' for consistency
-            # Handle Vietnamese keys from Template
-            country_val = clean_row.get('Quốc gia') or clean_row.get('Country', '')
-            weight_val = clean_row.get('Cân nặng') or clean_row.get('Weight', 0)
+            # ✅ Use 'Service' column to lookup price sheet
+            service_code = service_val
             
             row_normalized = {
                 'Quốc gia': country_val,
@@ -2790,6 +2904,7 @@ def pricing_calculate_all():
             
             freight = "N/A"
             reg_fee = "N/A"
+            transit_time = "N/A"
             
             # Find Sheet Info from Index
             sheet_info = sheet_index.get(service_code)
@@ -2805,17 +2920,45 @@ def pricing_calculate_all():
                 
                 df = sheet_cache[sheet_name]
                 if not df.empty:
-                    # Calculate
+                    # Calculate Price
                     freight, reg_fee = calculate_price_for_row(row_normalized, df)
+                    
+                    # ✅ Get Transit Time based on mode
+                    if is_cn_mode:
+                        tt = get_transit_time_cn(df, country_val)
+                        if tt:
+                            # ✅ Normalize Chinese -> English
+                            transit_time = tt.replace('工作日', ' days').replace('天', ' days')
+                        else:
+                            transit_time = "N/A"
+                    else:
+                        transit_time = get_transit_time_vn(country_val)
                 else:
                     freight = "Lỗi Sheet"
             else:
-                freight = "Mã DV không khớp" # Service Code Not Found
+                freight = "Mã DV không khớp"
                 log_to_file(f"Code '{service_code}' not found in index. Available keys: {list(sheet_index.keys())[:5]}...")
             
-            new_row = row.copy()
-            new_row['Cước chính'] = freight
-            new_row['Phí đăng ký'] = reg_fee
+            # ✅ Build result row with all required columns
+            new_row = {
+                'Service': service_val,
+                'Country': country_val,
+                'Weight': weight_val,
+                'SERVICE CODE': generated_service_code,
+                'Transit Time': transit_time,
+                'Cước chính': freight,
+                'Phí đăng ký': reg_fee
+            }
+            
+            # ✅ Preserve extra columns BUT exclude legacy/duplicate ones
+            exclude_keys = [
+                'Service', 'Country', 'Weight', 'SERVICE CODE', 'Transit Time', 'Cước chính', 'Phí đăng ký', # Standard keys
+                'Quốc gia', 'Cân nặng', 'Tg vận chuyển' # Legacy keys to remove
+            ]
+            
+            for k, v in row.items():
+                if k not in exclude_keys:
+                    new_row[k] = v
             results.append(new_row)
         
         return jsonify({"status": "success", "data": results})
@@ -2837,8 +2980,8 @@ def export_pricing_results():
         df.insert(0, 'STT', range(1, 1 + len(df)))
 
         desired_cols = [
-            'STT', 'Tg vận chuyển', 'Service', 'SERVICE CODE',
-            'Quốc gia', 'Cân nặng', 'Cước chính', 'Phí đăng ký'
+            'STT', 'Service', 'Country', 'Weight', 'SERVICE CODE',
+            'Transit Time', 'Cước chính', 'Phí đăng ký'
         ]
 
         final_cols = [col for col in desired_cols if col in df.columns]
@@ -2974,8 +3117,8 @@ def delete_pricing_history(history_id):
 @app.route('/tools/pricing/download-template')
 @login_required
 def download_template():
-    df = pd.DataFrame(columns=['Tg vận chuyển', 'Service', 'SERVICE CODE', 'Quốc gia', 'Cân nặng'])
-    df.loc[0] = ['3-5 days', 'Express', 'YTYCPREG', 'US', '0.5']
+    df = pd.DataFrame(columns=['Service', 'Country', 'Weight'])
+    df.loc[0] = ['YTYCPREG', 'US', '0.5']
     
     output = io.BytesIO()
     df.to_csv(output, index=False, encoding='utf-8-sig')

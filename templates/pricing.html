@@ -553,7 +553,7 @@
 
     // ✅ NEW: Delete a user-added column (from formula)
     function deleteColumn(colName) {
-        if (!confirm(`Xóa cột "${colName}"?`)) return;
+        if (!confirm(`Delete column "${colName}"?`)) return;
 
         // Remove from data
         currentData.forEach(row => {
@@ -579,7 +579,7 @@
             return;
         }
 
-        const baseHeaders = ['Tg vận chuyển', 'Service', 'SERVICE CODE', 'Quốc gia', 'Cân nặng'];
+        const baseHeaders = ['Service', 'Country', 'Weight', 'SERVICE CODE', 'Transit Time', 'Cước chính', 'Phí đăng ký'];
         const allHeaders = Object.keys(data[0]);
 
         // Ensure base headers come first, then others
@@ -694,9 +694,9 @@
                 const res = await fetch("{{ url_for('upload_price_table') }}", { method: 'POST', body: formData });
                 const json = await res.json();
                 if (json.success) {
-                    priceResult.innerHTML = `<span class="text-success"><i class="bi bi-check-circle"></i> Bảng giá đã sẵn sàng.</span>`;
+                    priceResult.innerHTML = `<span class="text-success"><i class="bi bi-check-circle"></i> Price table ready.</span>`;
                     btnCalculate.disabled = false;
-                } else { priceResult.innerHTML = `<span class="text-danger">Lỗi: ${json.message}</span>`; }
+                } else { priceResult.innerHTML = `<span class="text-danger">Error: ${json.message}</span>`; }
             } catch (err) { priceResult.innerText = 'Price upload failed.'; }
         });
 
@@ -708,7 +708,7 @@
                 const res = await fetch("{{ url_for('pricing_calculate_all') }}", {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: currentData })
+                    body: JSON.stringify({ data: currentData, mode: currentMode })
                 });
                 const json = await res.json();
                 if (json.status === 'success') {
@@ -821,7 +821,7 @@
             const colName = document.getElementById('newColumnName').value.trim();
             const originalFormulaStr = formulaInput.innerText.trim();
             let formulaStr = originalFormulaStr;
-            if (!colName || !formulaStr) { alert("Vui lòng nhập tên cột và công thức."); return; }
+            if (!colName || !formulaStr) { alert("Please enter column name and formula."); return; }
 
             // --- NEW LOOKUP LOGIC ---
             let lookupMap = null;
@@ -919,7 +919,7 @@
 
             } catch (e) {
                 console.error("Formula evaluation error:", e);
-                alert('Công thức không hợp lệ. Vui lòng kiểm tra lại.');
+                alert('Invalid formula. Please check and try again.');
             }
         };
 
@@ -1010,22 +1010,22 @@
             const historyValueCol = lookupHistoryValue.value;
 
             // Validation
-            if (!colName) { alert('Vui lòng nhập tên cột mới (Step 1).'); return; }
-            if (!lookupData) { alert('Vui lòng chọn bảng history (Step 2).'); return; }
-            if (!currentKeyCol) { alert('Vui lòng chọn cột match (Step 3).'); return; }
-            if (!historyValueCol) { alert('Vui lòng chọn cột lấy giá trị (Step 4).'); return; }
+            if (!colName) { alert('Please enter new column name (Step 1).'); return; }
+            if (!lookupData) { alert('Please select history table (Step 2).'); return; }
+            if (!currentKeyCol) { alert('Please select match column (Step 3).'); return; }
+            if (!historyValueCol) { alert('Please select value column (Step 4).'); return; }
 
             // Auto-match: use same column name for history key
             const historyKeyCol = currentKeyCol;
             const historyCols = Object.keys(lookupData[0]);
             if (!historyCols.includes(historyKeyCol)) {
-                alert(`Cột "${historyKeyCol}" không tồn tại trong bảng history! Không thể auto-match.`);
+                alert(`Column "${historyKeyCol}" does not exist in history table! Cannot auto-match.`);
                 return;
             }
 
             // Check if column already exists
             if (currentData.length > 0 && Object.keys(currentData[0]).includes(colName)) {
-                alert(`Cột "${colName}" đã tồn tại!`);
+                alert(`Column "${colName}" already exists!`);
                 return;
             }
 
@@ -1051,7 +1051,7 @@
             // Reset form
             document.getElementById('lookupNewColumnName').value = '';
 
-            alert(`Lookup hoàn thành! Đã match ${matchCount}/${currentData.length} dòng.`);
+            alert(`Lookup complete! Matched ${matchCount}/${currentData.length} rows.`);
         });
     });
 
@@ -1101,7 +1101,7 @@
                     container.appendChild(div);
                 });
             }
-        } catch (e) { container.innerHTML = '<span class="text-danger small">Lỗi tải dữ liệu.</span>'; }
+        } catch (e) { container.innerHTML = '<span class="text-danger small">Error loading data.</span>'; }
     }
 
     async function populateLookupHistory() {
@@ -1155,14 +1155,14 @@
 
 
     async function deleteSavedFormula(id) {
-        if (!confirm('Xóa công thức đã lưu này?')) return;
+        if (!confirm('Delete this saved formula?')) return;
         try {
             const res = await fetch('/tools/pricing/formulas/delete/' + id, { method: 'POST' });
             const json = await res.json();
             if (json.status === 'success') {
                 loadSavedFormulas();
             }
-        } catch (e) { alert("Không thể xóa công thức."); }
+        } catch (e) { alert("Cannot delete formula."); }
     }
 
     async function loadForComparison(id) {
@@ -1179,7 +1179,7 @@
                 selHistory.innerHTML = hCols.map(c => `<option value="${c}">${c}</option>`).join('');
                 joinModalObj.show();
             }
-        } catch (e) { alert("Lỗi tải dữ liệu so sánh."); }
+        } catch (e) { alert("Error loading comparison data."); }
     }
 
     document.getElementById('applyJoin').onclick = () => {

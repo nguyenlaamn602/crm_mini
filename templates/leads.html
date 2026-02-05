@@ -29,57 +29,55 @@
     <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded-4 shadow-sm">
         <div class="d-flex align-items-center gap-3">
             <h4 class="mb-0 fw-bold text-dark">{{ sector_name }}</h4>
-            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm"
-                    data-bs-toggle="modal"
-                    data-bs-target="#addLeadModal">
+            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal"
+                data-bs-target="#addLeadModal">
                 <i class="bi bi-plus-lg me-1"></i> Add New
             </button>
-            
+
             <!-- ✅ NEW: MY LEADS BUTTON -->
             {% if request.args.get('mode') == 'mine' %}
-                <a href="/sector/{{ sector_id }}" class="btn btn-outline-primary btn-sm rounded-pill px-3 active shadow-sm">
-                    <i class="bi bi-check-circle-fill me-1"></i> My Leads
-                </a>
+            <a href="/sector/{{ sector_id }}" class="btn btn-outline-primary btn-sm rounded-pill px-3 active shadow-sm">
+                <i class="bi bi-check-circle-fill me-1"></i> My Leads
+            </a>
             {% else %}
-                <a href="/sector/{{ sector_id }}?mode=mine" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
-                    <i class="bi bi-person me-1"></i> My Leads
-                </a>
+            <a href="/sector/{{ sector_id }}?mode=mine" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
+                <i class="bi bi-person me-1"></i> My Leads
+            </a>
             {% endif %}
         </div>
 
         <form action="/sector/{{ sector_id }}" method="GET" class="d-flex align-items-center gap-2">
             <!-- Keep mode if exists -->
             {% if request.args.get('mode') %}
-                <input type="hidden" name="mode" value="{{ request.args.get('mode') }}">
+            <input type="hidden" name="mode" value="{{ request.args.get('mode') }}">
             {% endif %}
-            
+
             <div class="input-group input-group-sm rounded-3 overflow-hidden bg-light" style="width: 250px;">
                 <span class="input-group-text border-0 bg-transparent text-muted">
                     <i class="bi bi-search"></i>
                 </span>
-                <input type="text"
-                       name="search"
-                       class="form-control border-0 bg-transparent"
-                       placeholder="Search customer name..."
-                       value="{{ request.args.get('search', '') }}">
+                <input type="text" name="search" class="form-control border-0 bg-transparent"
+                    placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
             </div>
 
-            <select name="status"
-                    class="form-select form-select-sm border-0 bg-light rounded-3"
-                    style="width: 180px;"
-                    onchange="this.form.submit()">
+            <select name="status" class="form-select form-select-sm border-0 bg-light rounded-3" style="width: 180px;"
+                onchange="this.form.submit()">
                 <option value="">-- All Statuses --</option>
-                <option value="Khách Mới" {% if request.args.get('status') == 'Khách Mới' %}selected{% endif %}>New Customer</option>
-                <option value="Khách hàng tiềm năng" {% if request.args.get('status') == 'Khách hàng tiềm năng' %}selected{% endif %}>Potential</option>
-                <option value="Khách Vip" {% if request.args.get('status') == 'Khách Vip' %}selected{% endif %}>VIP</option>
-                <option value="Khách không đi" {% if request.args.get('status') == 'Khách không đi' %}selected{% endif %}>No-show</option>
+                <option value="Khách Mới" {% if request.args.get('status')=='Khách Mới' %}selected{% endif %}>New
+                    Customer</option>
+                <option value="Khách hàng tiềm năng" {% if request.args.get('status')=='Khách hàng tiềm năng'
+                    %}selected{% endif %}>Potential</option>
+                <option value="Khách Vip" {% if request.args.get('status')=='Khách Vip' %}selected{% endif %}>VIP
+                </option>
+                <option value="Khách không đi" {% if request.args.get('status')=='Khách không đi' %}selected{% endif %}>
+                    No-show</option>
             </select>
 
             {% if request.args.get('search') or request.args.get('status') %}
-                <a href="/sector/{{ sector_id }}{% if request.args.get('mode') %}?mode={{request.args.get('mode')}}{% endif %}"
-                   class="btn btn-sm btn-link text-secondary text-decoration-none">
-                    Clear Filters
-                </a>
+            <a href="/sector/{{ sector_id }}{% if request.args.get('mode') %}?mode={{request.args.get('mode')}}{% endif %}"
+                class="btn btn-sm btn-link text-secondary text-decoration-none">
+                Clear Filters
+            </a>
             {% endif %}
         </form>
     </div>
@@ -111,45 +109,52 @@
                             ID: {{ lead.psid }}
                         </small>
                     </td>
-                    
+
                     <!-- ✅ NEW: ASSIGNEE COLUMN & SELF-CLAIM/UNCLAIM LOGIC -->
                     <td>
                         {% if lead.assigned_to %}
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="badge bg-info-subtle text-info border border-info-subtle px-2 rounded-pill">
-                                    <i class="bi bi-person-fill me-1"></i>
-                                    {{ user_map[lead.assigned_to] if lead.assigned_to in user_map else 'Unknown' }}
-                                </span>
-                                
-                                <!-- ✅ FIX: Thêm điều kiện Admin/Superadmin cũng được phép hủy -->
-                                {% if lead.assigned_to|string == current_user.id|string or current_user.role in ['admin', 'superadmin'] %}
-                                    <form action="/customer/assign/{{ lead.psid }}" method="POST" onsubmit="return confirm('Hủy phân công khách này?');">
-                                        <!-- Gửi assigned_user_id rỗng để backend hiểu là unassign -->
-                                        <input type="hidden" name="assigned_user_id" value="">
-                                        <button type="submit" class="btn btn-link text-danger p-0 ms-1" title="Hủy phân công">
-                                            <i class="bi bi-x-circle"></i>
-                                        </button>
-                                    </form>
-                                {% endif %}
-                            </div>
-                        {% else %}
-                            <!-- Logic: User thường (CSKH/Sale/etc) có thể tự nhận -->
-                            <form action="/customer/assign/{{ lead.psid }}" method="POST">
-                                <input type="hidden" name="assigned_user_id" value="{{ current_user.id }}">
-                                <button type="submit" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-0 fw-bold shadow-sm" style="font-size: 0.75rem;">
-                                    Nhận
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-info-subtle text-info border border-info-subtle px-2 rounded-pill">
+                                <i class="bi bi-person-fill me-1"></i>
+                                {{ user_map[lead.assigned_to] if lead.assigned_to in user_map else 'Unknown' }}
+                            </span>
+
+                            <!-- ✅ FIX: Thêm điều kiện Admin/Superadmin cũng được phép hủy -->
+                            {% if lead.assigned_to|string == current_user.id|string or current_user.role in ['admin',
+                            'superadmin'] %}
+                            <form action="/customer/assign/{{ lead.psid }}" method="POST"
+                                onsubmit="return confirm('Unassign this lead?');">
+                                <!-- Send empty assigned_user_id to trigger unassign logic -->
+                                <input type="hidden" name="assigned_user_id" value="">
+                                <button type="submit" class="btn btn-link text-danger p-0 ms-1" title="Unassign">
+                                    <i class="bi bi-x-circle"></i>
                                 </button>
                             </form>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <!-- Logic: User can self-claim leads -->
+                        <form action="/customer/assign/{{ lead.psid }}" method="POST">
+                            <input type="hidden" name="assigned_user_id" value="{{ current_user.id }}">
+                            <button type="submit"
+                                class="btn btn-sm btn-outline-primary rounded-pill px-3 py-0 fw-bold shadow-sm"
+                                style="font-size: 0.75rem;">
+                                Claim
+                            </button>
+                        </form>
                         {% endif %}
                     </td>
 
                     <td>
                         {% if lead.source_platform == 'Lark' %}
-                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2">Lark Base</span>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2">Lark
+                            Base</span>
                         {% elif lead.source_platform == 'Pancake' %}
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2">Pancake.ai</span>
+                        <span
+                            class="badge bg-primary-subtle text-primary border border-primary-subtle px-2">Pancake.ai</span>
                         {% else %}
-                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2">Manual</span>
+                        <span
+                            class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2">Manual</span>
                         {% endif %}
                     </td>
 
@@ -171,14 +176,11 @@
                     </td>
 
                     <td class="pe-4 text-end">
-                        <a href="/customer/{{ lead.psid }}"
-                           class="btn btn-link text-primary p-0 me-2">
+                        <a href="/customer/{{ lead.psid }}" class="btn btn-link text-primary p-0 me-2">
                             <i class="bi bi-pencil-square fs-5"></i>
                         </a>
-                        <form action="/customer/delete/{{ lead.psid }}"
-                              method="POST"
-                              onsubmit="return confirm('Delete this customer?');"
-                              style="display:inline;">
+                        <form action="/customer/delete/{{ lead.psid }}" method="POST"
+                            onsubmit="return confirm('Delete this customer?');" style="display:inline;">
                             <button type="submit" class="btn btn-link text-danger p-0">
                                 <i class="bi bi-trash fs-5"></i>
                             </button>
@@ -222,9 +224,12 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label small fw-bold text-muted">SECTOR</label>
                             <select name="sector" class="form-select rounded-3">
-                                <option value="Pod_Drop" {% if sector_id == 'Pod_Drop' %}selected{% endif %}>Pod / Drop</option>
-                                <option value="Express" {% if sector_id == 'Express' %}selected{% endif %}>Express</option>
-                                <option value="Warehouse" {% if sector_id == 'Warehouse' %}selected{% endif %}>Warehouse</option>
+                                <option value="Pod_Drop" {% if sector_id=='Pod_Drop' %}selected{% endif %}>Pod / Drop
+                                </option>
+                                <option value="Express" {% if sector_id=='Express' %}selected{% endif %}>Express
+                                </option>
+                                <option value="Warehouse" {% if sector_id=='Warehouse' %}selected{% endif %}>Warehouse
+                                </option>
                             </select>
                         </div>
 
@@ -241,13 +246,10 @@
                 </div>
 
                 <div class="modal-footer border-0 pb-4 pe-4">
-                    <button type="button"
-                            class="btn btn-light rounded-pill px-4"
-                            data-bs-dismiss="modal">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">
                         Cancel
                     </button>
-                    <button type="submit"
-                            class="btn btn-primary rounded-pill px-4">
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">
                         Create Customer
                     </button>
                 </div>

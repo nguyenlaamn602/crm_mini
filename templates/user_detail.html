@@ -13,26 +13,26 @@
         </div>
         <div>
             {% if staff.role == 'superadmin' %}
-                <span class="badge bg-dark fs-6 rounded-pill px-3">Superadmin</span>
+            <span class="badge bg-dark fs-6 rounded-pill px-3">Superadmin</span>
             {% elif staff.role == 'admin' %}
-                <span class="badge bg-danger fs-6 rounded-pill px-3">Admin</span>
+            <span class="badge bg-danger fs-6 rounded-pill px-3">Admin</span>
             {% else %}
-                <span class="badge bg-success fs-6 rounded-pill px-3">User</span>
+            <span class="badge bg-success fs-6 rounded-pill px-3">User</span>
             {% endif %}
         </div>
     </div>
 
     <!-- Flash Messages -->
     {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div id="flash-messages">
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} rounded-4 mb-4 shadow-sm border-0 fade show" role="alert">
-                        {{ message }}
-                    </div>
-                {% endfor %}
-            </div>
-        {% endif %}
+    {% if messages %}
+    <div id="flash-messages">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} rounded-4 mb-4 shadow-sm border-0 fade show" role="alert">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
     {% endwith %}
 
     <div class="row g-4">
@@ -40,12 +40,13 @@
         <div class="col-lg-4">
             <div class="card border-0 shadow-sm rounded-4 mb-4">
                 <div class="card-body p-4 text-center">
-                    <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3" style="width: 80px; height: 80px; font-size: 2rem; font-weight: bold;">
+                    <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3"
+                        style="width: 80px; height: 80px; font-size: 2rem; font-weight: bold;">
                         {{ staff.username[0].upper() }}
                     </div>
                     <h5 class="fw-bold mb-1">{{ staff.username }}</h5>
                     <p class="text-muted small mb-3">ID: {{ staff._id }}</p>
-                    
+
                     <hr class="my-4 opacity-25">
 
                     <!-- Role Update (ONLY SUPERADMIN) -->
@@ -53,37 +54,40 @@
                     <form action="/admin/user/update_role/{{ staff._id }}" method="POST" class="mb-4 text-start">
                         <label class="form-label small fw-bold text-muted">Role (Superadmin Only)</label>
                         <select name="role" class="form-select rounded-3" onchange="this.form.submit()">
-                            <option value="superadmin" {% if staff.role == 'superadmin' %}selected{% endif %}>Superadmin</option>
-                            <option value="user" {% if staff.role == 'user' %}selected{% endif %}>User</option>
-                            <option value="admin" {% if staff.role == 'admin' %}selected{% endif %}>Admin</option>
+                            <option value="superadmin" {% if staff.role=='superadmin' %}selected{% endif %}>Superadmin
+                            </option>
+                            <option value="user" {% if staff.role=='user' %}selected{% endif %}>User</option>
+                            <option value="admin" {% if staff.role=='admin' %}selected{% endif %}>Admin</option>
                         </select>
                     </form>
                     {% endif %}
 
                     <!-- Department Update (ONLY SUPERADMIN) -->
                     {% if current_user.role == 'superadmin' %}
-                    <form action="/admin/user/update_departments/{{ staff._id }}" method="POST" class="mb-4 text-start" id="updateDeptsForm">
+                    <form action="/admin/user/update_departments/{{ staff._id }}" method="POST" class="mb-4 text-start"
+                        id="updateDeptsForm">
                         <label class="form-label small fw-bold text-muted">Departments (Superadmin)</label>
                         <!-- ✅ Changed to Checklist for consistent UI -->
                         <div class="border rounded-3 p-3 bg-light mb-2" style="max-height: 200px; overflow-y: auto;">
                             {% for dept in departments %}
                             <div class="form-check mb-2">
-                                <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}" id="upd_dept_{{ loop.index }}"
-                                       {% if dept in staff.departments %}checked{% endif %}>
+                                <input class="form-check-input" type="checkbox" name="departments" value="{{ dept }}"
+                                    id="upd_dept_{{ loop.index }}" {% if dept in staff.departments %}checked{% endif %}>
                                 <label class="form-check-label small" for="upd_dept_{{ loop.index }}">{{ dept }}</label>
                             </div>
                             {% endfor %}
                         </div>
-                        <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill shadow-sm">Update Departments</button>
+                        <button type="submit" class="btn btn-primary btn-sm w-100 rounded-pill shadow-sm">Update
+                            Departments</button>
                     </form>
                     {% else %}
                     <div class="mb-4 text-start">
                         <label class="form-label small fw-bold text-muted">Departments</label>
                         <div class="p-2 bg-light rounded-3 border d-flex flex-wrap gap-1">
                             {% for dept in staff.departments %}
-                                <span class="badge bg-secondary border-0">{{ dept }}</span>
+                            <span class="badge bg-secondary border-0">{{ dept }}</span>
                             {% else %}
-                                <span class="text-muted small">-- Unassigned --</span>
+                            <span class="text-muted small">-- Unassigned --</span>
                             {% endfor %}
                         </div>
                     </div>
@@ -94,8 +98,8 @@
                     <form action="/admin/user/update-telegram/{{ staff._id }}" method="POST" class="mb-3 text-start">
                         <label class="form-label small fw-bold text-muted">Telegram Chat ID</label>
                         <div class="input-group">
-                            <input type="text" name="telegram_id" class="form-control rounded-start-3" 
-                                   value="{{ staff.telegram_chat_id or '' }}" placeholder="Chat ID...">
+                            <input type="text" name="telegram_id" class="form-control rounded-start-3"
+                                value="{{ staff.telegram_chat_id or '' }}" placeholder="Chat ID...">
                             <button class="btn btn-outline-secondary rounded-end-3" type="submit">
                                 <i class="bi bi-save"></i>
                             </button>
@@ -111,13 +115,14 @@
                 <div class="card-body p-4">
                     <h6 class="fw-bold text-danger">Danger Zone</h6>
                     <p class="small text-danger opacity-75 mb-3">Deleting a user is irreversible.</p>
-                    <form action="/admin/user/delete/{{ staff._id }}" method="POST" onsubmit="return confirm('Permanently delete this user?');">
+                    <form action="/admin/user/delete/{{ staff._id }}" method="POST"
+                        onsubmit="return confirm('Permanently delete this user?');">
                         <button class="btn btn-danger w-100 rounded-pill">Delete User</button>
                     </form>
                 </div>
             </div>
             {% endif %}
-            
+
             <!-- Charts -->
             <div class="card border-0 shadow-sm rounded-4 mb-4">
                 <div class="card-header bg-white border-0 pt-4 px-4 pb-0">
@@ -170,16 +175,20 @@
                 <div class="card-header bg-white border-bottom border-light px-4 pt-4">
                     <ul class="nav nav-tabs card-header-tabs" role="tablist">
                         <li class="nav-item">
-                            <a class="nav-link active fw-bold" data-bs-toggle="tab" href="#customerTasks">Customer Tasks ({{ task_breakdown.customer.total }})</a>
+                            <a class="nav-link active fw-bold" data-bs-toggle="tab" href="#customerTasks">Customer Tasks
+                                ({{ task_breakdown.customer.total }})</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#corpTasks">Corp Tasks ({{ task_breakdown.corp.total }})</a>
+                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#corpTasks">Corp Tasks ({{
+                                task_breakdown.corp.total }})</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#personalTasks">Personal ({{ task_breakdown.personal.total }})</a>
+                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#personalTasks">Personal ({{
+                                task_breakdown.personal.total }})</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#departmentTasks">Department ({{ task_breakdown.department.total }})</a>
+                            <a class="nav-link fw-bold" data-bs-toggle="tab" href="#departmentTasks">Department ({{
+                                task_breakdown.department.total }})</a>
                         </li>
                     </ul>
                 </div>
@@ -202,19 +211,21 @@
                                         <tr>
                                             <td class="ps-4 fw-medium">{{ t.todo_content }}</td>
                                             <td>
-                                                <span class="badge rounded-pill px-3 
+                                                <span
+                                                    class="badge rounded-pill px-3 
                                                     {% if t.status == 'done' %}bg-success{% elif t.status == 'overdue' %}bg-danger{% else %}bg-secondary{% endif %}">
                                                     {{ t.status }}
                                                 </span>
                                             </td>
-                                            <td class="pe-4 text-end small text-muted">{{ t.updated_at.strftime('%d/%m %H:%M') }}</td>
+                                            <td class="pe-4 text-end small text-muted">{{ t.updated_at.strftime('%d/%m
+                                                %H:%M') }}</td>
                                         </tr>
                                         {% endfor %}
                                     </tbody>
                                 </table>
                             </div>
                             {% else %}
-                                <div class="text-center text-muted py-5">No customer tasks found.</div>
+                            <div class="text-center text-muted py-5">No customer tasks found.</div>
                             {% endif %}
                         </div>
 
@@ -235,9 +246,11 @@
                                         {% for t in corp_tasks %}
                                         <tr>
                                             <td class="ps-4 fw-medium">{{ t.title }}</td>
-                                            <td><span class="badge bg-light text-dark border">{{ t.department }}</span></td>
+                                            <td><span class="badge bg-light text-dark border">{{ t.department }}</span>
+                                            </td>
                                             <td>
-                                                <span class="badge rounded-pill px-3 
+                                                <span
+                                                    class="badge rounded-pill px-3 
                                                     {% if t.status == 'done' %}bg-success{% else %}bg-warning text-dark{% endif %}">
                                                     {{ t.status }}
                                                 </span>
@@ -251,14 +264,15 @@
                                 </table>
                             </div>
                             {% else %}
-                                <div class="text-center text-muted py-5">No company tasks found.</div>
+                            <div class="text-center text-muted py-5">No company tasks found.</div>
                             {% endif %}
                         </div>
 
                         <!-- Personal Tasks (HIDDEN DETAILS - METRICS ONLY) -->
                         <div class="tab-pane fade" id="personalTasks">
                             <div class="d-flex flex-column align-items-center justify-content-center py-5 text-center">
-                                <div class="bg-light rounded-circle d-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                                <div class="bg-light rounded-circle d-flex align-items-center justify-content-center mb-3"
+                                    style="width: 80px; height: 80px;">
                                     <i class="bi bi-shield-lock-fill fs-1 text-secondary opacity-50"></i>
                                 </div>
                                 <h5 class="fw-bold text-dark mb-1">Private Content</h5>
@@ -266,24 +280,30 @@
                                     Personal tasks are private to the user. <br>
                                     Admin can only view the measurement metrics below.
                                 </p>
-                                
+
                                 <div class="row g-2 w-100 px-4" style="max-width: 500px;">
                                     <div class="col-4">
                                         <div class="p-3 border rounded-3 bg-white shadow-sm">
-                                            <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Total</div>
-                                            <div class="fw-bold fs-4 text-dark">{{ task_breakdown.personal.total }}</div>
+                                            <div class="small text-muted fw-bold text-uppercase mb-1"
+                                                style="font-size: 0.7rem;">Total</div>
+                                            <div class="fw-bold fs-4 text-dark">{{ task_breakdown.personal.total }}
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="col-4">
                                         <div class="p-3 border rounded-3 bg-white shadow-sm">
-                                            <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Done</div>
-                                            <div class="fw-bold fs-4 text-success">{{ task_breakdown.personal.done }}</div>
+                                            <div class="small text-muted fw-bold text-uppercase mb-1"
+                                                style="font-size: 0.7rem;">Done</div>
+                                            <div class="fw-bold fs-4 text-success">{{ task_breakdown.personal.done }}
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="col-4">
                                         <div class="p-3 border rounded-3 bg-white shadow-sm">
-                                            <div class="small text-muted fw-bold text-uppercase mb-1" style="font-size: 0.7rem;">Pending</div>
-                                            <div class="fw-bold fs-4 text-warning">{{ task_breakdown.personal.not_yet }}</div>
+                                            <div class="small text-muted fw-bold text-uppercase mb-1"
+                                                style="font-size: 0.7rem;">Pending</div>
+                                            <div class="fw-bold fs-4 text-warning">{{ task_breakdown.personal.not_yet }}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -307,9 +327,11 @@
                                         {% for t in department_tasks %}
                                         <tr>
                                             <td class="ps-4 fw-medium">{{ t.title }}</td>
-                                            <td><span class="badge bg-light text-dark border">{{ t.department }}</span></td>
+                                            <td><span class="badge bg-light text-dark border">{{ t.department }}</span>
+                                            </td>
                                             <td>
-                                                <span class="badge rounded-pill px-3 
+                                                <span
+                                                    class="badge rounded-pill px-3 
                                                     {% if t.status == 'done' %}bg-success{% elif t.status == 'overdue' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
                                                     {{ t.status }}
                                                 </span>
@@ -323,11 +345,12 @@
                                 </table>
                             </div>
                             {% else %}
-                                <div class="text-center text-muted py-5">
-                                    <i class="bi bi-building-fill-gear fs-2 d-block mb-2 opacity-25"></i>
-                                    <h5 class="fw-bold text-dark mb-1">No Department Tasks</h5>
-                                    <p class="text-muted small">This user has no department tasks or is not part of a department with tasks.</p>
-                                </div>
+                            <div class="text-center text-muted py-5">
+                                <i class="bi bi-building-fill-gear fs-2 d-block mb-2 opacity-25"></i>
+                                <h5 class="fw-bold text-dark mb-1">No Department Tasks</h5>
+                                <p class="text-muted small">This user has no department tasks or is not part of a
+                                    department with tasks.</p>
+                            </div>
                             {% endif %}
                         </div>
                     </div>
@@ -376,10 +399,10 @@
         }
     });
 
-    document.addEventListener("DOMContentLoaded", function() {
-        setTimeout(function() {
+    document.addEventListener("DOMContentLoaded", function () {
+        setTimeout(function () {
             var alerts = document.querySelectorAll('.alert');
-            alerts.forEach(function(alert) {
+            alerts.forEach(function (alert) {
                 var bsAlert = new bootstrap.Alert(alert);
                 bsAlert.close();
             });
@@ -387,11 +410,11 @@
 
         const updateDeptsForm = document.getElementById('updateDeptsForm');
         if (updateDeptsForm) {
-            updateDeptsForm.addEventListener('submit', function(e) {
+            updateDeptsForm.addEventListener('submit', function (e) {
                 const checkboxes = this.querySelectorAll('input[name="departments"]:checked');
                 if (checkboxes.length === 0) {
                     e.preventDefault();
-                    alert('Vui lòng chọn ít nhất một phòng ban.');
+                    alert('Please select at least one department.');
                 }
             });
         }

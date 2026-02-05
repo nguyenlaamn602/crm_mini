@@ -780,11 +780,14 @@ def sync_all_lark_task():
                            headers={"Authorization": f"Bearer {tk}"}, params={"page_size": 500}, timeout=60).json()
         for item in res.get('data', {}).get('items', []):
             f = item.get('fields', {})
-            db.leads.update_one({"psid": item.get('record_id')}, {"$set": {
-                "full_name": f.get('Tên khách hàng'), "phone_number": f.get('Link FB/username tele'),
-                "sector": classify_sector(f), "status": f.get('Trạng thái', 'Khách Mới'),
-                "page_id": "LARK_AUTO", "source_platform": "Lark", "updated_at": now_dt()
-            }}, upsert=True)
+            db.leads.update_one({"psid": item.get('record_id')}, {
+                "$set": {
+                    "full_name": f.get('Tên khách hàng'), "phone_number": f.get('Link FB/username tele'),
+                    "sector": classify_sector(f), "status": f.get('Trạng thái', 'Khách Mới'),
+                    "page_id": "LARK_AUTO", "source_platform": "Lark"
+                },
+                "$setOnInsert": {"updated_at": now_dt()}  # ✅ Only set on new records
+            }, upsert=True)
         LAST_SYNC_TIMESTAMP = time.time()
     except: pass
 
@@ -821,11 +824,14 @@ def pancake_sync_task():
         for p in db.pages.find({}, {"id": 1, "access_token": 1, "username": 1}):
             if not p.get("id") or not p.get("access_token"): continue
             for l in service.get_all_leads(p["id"], p["access_token"]):
-                db.leads.update_one({"psid": l['psid']}, {"$set": {
-                    "full_name": l['name'], "phone_number": l['phone'], "sector": l['sector'],
-                    "status": l['status'], "page_id": p["id"], "page_username": p["username"],
-                    "conversation_id": l.get('conversation_id'), "source_platform": "Pancake", "updated_at": now_dt()
-                }}, upsert=True)
+                db.leads.update_one({"psid": l['psid']}, {
+                    "$set": {
+                        "full_name": l['name'], "phone_number": l['phone'], "sector": l['sector'],
+                        "status": l['status'], "page_id": p["id"], "page_username": p["username"],
+                        "conversation_id": l.get('conversation_id'), "source_platform": "Pancake"
+                    },
+                    "$setOnInsert": {"updated_at": now_dt()}  # ✅ Only set on new records
+                }, upsert=True)
         LAST_SYNC_TIMESTAMP = time.time()
     except: pass
 
@@ -3276,8 +3282,8 @@ if __name__ == '__main__':
     init_pancake_pages(True)
 
     if not scheduler.running:
-        scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', seconds=60)
-        scheduler.add_job(id='l_leads', func=sync_all_lark_task, trigger='interval', seconds=60)
+        scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', hours=24)  # ✅ Changed to daily
+        scheduler.add_job(id='l_leads', func=sync_all_lark_task, trigger='interval', hours=24)  # ✅ Changed to daily
         # scheduler.add_job(id='l_tasks', func=sync_lark_tasks_task, trigger='interval', seconds=60)
         
         # ✅ Unified auto overdue scheduler

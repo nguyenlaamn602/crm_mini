@@ -215,9 +215,21 @@
                 <div class="tab-content p-4" id="formulaTabContent">
                     <!-- Pane 1: Add New Formula -->
                     <div class="tab-pane fade show active" id="new-formula-pane" role="tabpanel">
-                        <div class="mb-3">
-                            <label for="newColumnName" class="form-label">New Column Name</label>
-                            <input type="text" class="form-control" id="newColumnName" placeholder="e.g., Total Fee">
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-8">
+                                <label for="newColumnName" class="form-label">New Column Name</label>
+                                <input type="text" class="form-control" id="newColumnName"
+                                    placeholder="e.g., Total Fee">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="formulaCurrency" class="form-label">Currency / Format</label>
+                                <select class="form-select" id="formulaCurrency">
+                                    <option value="">None (Number)</option>
+                                    <option value="USD">USD ($)</option>
+                                    <option value="VND">VND (đ)</option>
+                                    <option value="CNY">CNY (¥)</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Formula</label>
@@ -513,19 +525,25 @@
         } catch (e) { alert("Error loading history detail."); }
     }
 
-    // ✅ NEW: Format VND with thousand separators (1234567 -> "1.234.567")
-    function formatVND(value) {
+    // ✅ Helper: Format CNY with symbol (¥) and 2 decimals
+    function formatCNY(value) {
         if (value === null || value === undefined || value === '') return '';
-        // Remove existing separators and parse number
-        const numValue = parseFloat(String(value).replace(/[,.]/g, ''));
-        if (isNaN(numValue)) return value;
-        // Only format if >= 1000 (4+ digits)
-        if (Math.abs(numValue) < 1000) return numValue.toString();
-        // Format with dot as thousand separator (VND style)
-        return numValue.toLocaleString('vi-VN').replace(/,/g, '.');
+        const num = parseFloat(String(value).replace(/[,¥]/g, ''));
+        if (isNaN(num)) return value;
+        return '¥' + num.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 
-    // ✅ NEW: Check if column is a money column that should be formatted
+    // ✅ Helper: Format VND with symbol (đ) and rounded
+    function formatVND(value) {
+        if (value === null || value === undefined || value === '') return '';
+        const num = parseFloat(String(value).replace(/[,.đ]/g, ''));
+        if (isNaN(num)) return value;
+        if (Math.abs(num) < 1000) return num.toString();
+        // Format with dot thousand separator + symbol
+        return num.toLocaleString('vi-VN').replace(/,/g, '.') + ' đ';
+    }
+
+    // ✅ Helper: Check if column is a money column
     function isMoneyColumn(colName) {
         const moneyKeywords = ['cước', 'phí', 'giá', 'price', 'fee', 'cost', 'total', 'tổng'];
         const lowerName = colName.toLowerCase();
@@ -533,7 +551,6 @@
     }
 
     /* ================= WORKFLOW ================= */
-
     function startWorkflow(mode) {
         currentMode = mode;
         document.getElementById('selection-view').classList.add('d-none');
@@ -541,6 +558,17 @@
         document.getElementById('workflow-title').innerText = mode;
         currentData = [];
         renderTable([]);
+
+        // Reset steps
+        document.getElementById('step-1-data').classList.remove('d-none');
+        document.getElementById('step-2-price').classList.add('d-none');
+        document.getElementById('step-3-result').classList.add('d-none');
+
+        // Reset buttons
+        document.getElementById('btnCalculate').disabled = true;
+        document.getElementById('btnSaveHistory').classList.add('d-none');
+        document.getElementById('btnExport').classList.add('d-none');
+        document.getElementById('btnOpenFormulaModal').disabled = true;
     }
 
     function resetView() {
@@ -551,7 +579,6 @@
         document.getElementById('step-3-result').classList.add('d-none');
     }
 
-    // ✅ NEW: Delete a user-added column (from formula)
     function deleteColumn(colName) {
         if (!confirm(`Delete column "${colName}"?`)) return;
 
@@ -591,8 +618,7 @@
         headerRow.innerHTML = '<th>#</th>';
         finalHeaders.forEach(h => {
             const th = document.createElement('th');
-
-            // ✅ NEW: Add delete button for user-added columns (from formula)
+            // ... (header Logic same) ...
             if (userAddedColumns.has(h)) {
                 th.innerHTML = `
                     <span class="d-flex align-items-center justify-content-between gap-1">
@@ -604,12 +630,11 @@
                         </button>
                     </span>
                 `;
-                th.classList.add('bg-info-subtle'); // Highlight user-added columns
+                th.classList.add('bg-info-subtle');
             } else {
                 th.textContent = h;
                 if (h === 'Cước chính' || h === 'Phí đăng ký') th.classList.add('bg-warning-subtle');
             }
-
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
@@ -619,16 +644,25 @@
             tr.setAttribute('data-row-index', index);
             let rowHtml = `<td class="text-muted small">${index + 1}</td>`;
 
-            // ✅ Kiểm tra mode VN-WW để format VND
-            const isVNMode = currentMode.toLowerCase().includes('vn');
+            // ✅ Kiểm tra mode để format tiền tệ
+            const isVNMode = currentMode.toLowerCase().includes('vn-ww') || currentMode.toLowerCase().includes('vn');
+            const isCNMode = currentMode.toLowerCase().includes('china-ww') || currentMode.toLowerCase().includes('cn') || currentMode.toLowerCase().includes('china');
 
             finalHeaders.forEach((h, colIndex) => {
                 const isEditable = userAddedColumns.has(h);
                 let cellValue = row[h] ?? '';
 
-                // ✅ Format VND cho các cột tiền tệ khi ở mode VN-WW
-                if (isVNMode && isMoneyColumn(h) && cellValue !== '' && !isNaN(parseFloat(String(cellValue).replace(/[,.]/g, '')))) {
-                    cellValue = formatVND(cellValue);
+                // ✅ Auto Format cho các cột tiền tệ
+                if (isMoneyColumn(h) && cellValue !== '' && !userAddedColumns.has(h)) {
+                    // Chỉ format nếu là số hợp lệ
+                    const rawStr = String(cellValue).replace(/[¥đ,.]/g, '');
+                    if (!isNaN(parseFloat(rawStr))) {
+                        if (isVNMode) {
+                            cellValue = formatVND(cellValue);
+                        } else if (isCNMode) {
+                            cellValue = formatCNY(cellValue);
+                        }
+                    }
                 }
 
                 rowHtml += `<td 
@@ -776,6 +810,16 @@
 
         btnOpenFormulaModal.addEventListener('click', () => {
             formulaColumnsContainer.innerHTML = '';
+            // ✅ Set Default Currency based on Mode
+            const currencySelect = document.getElementById('formulaCurrency');
+            if (currentMode.toLowerCase().includes('china') || currentMode.toLowerCase().includes('cn')) {
+                currencySelect.value = 'CNY';
+            } else if (currentMode.toLowerCase().includes('vn')) {
+                currencySelect.value = 'VND';
+            } else {
+                currencySelect.value = ''; // Default to Number
+            }
+
             if (!currentData.length) return;
             Object.keys(currentData[0] || {}).forEach(h => {
                 const btn = document.createElement('button');
@@ -801,13 +845,13 @@
         });
 
         // Helper function to save formula
-        async function saveFormula(name, formula) {
+        async function saveFormula(name, formula, currency) {
             if (!name || !formula) return;
             try {
                 const res = await fetch('/tools/pricing/formulas/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, formula })
+                    body: JSON.stringify({ name, formula, currency })
                 });
                 const json = await res.json();
                 if (json.status === 'success') {
@@ -820,101 +864,114 @@
         document.getElementById('applyFormula').onclick = () => {
             const colName = document.getElementById('newColumnName').value.trim();
             const originalFormulaStr = formulaInput.innerText.trim();
+            const currency = document.getElementById('formulaCurrency').value;
             let formulaStr = originalFormulaStr;
+
             if (!colName || !formulaStr) { alert("Please enter column name and formula."); return; }
 
             // --- NEW LOOKUP LOGIC ---
             let lookupMap = null;
-            let isPureLookup = false; // ✅ Flag to detect pure lookup (no math operations)
+            let isPureLookup = false;
 
             if (formulaStr.includes('lookup(') && lookupData) {
-                const keyCol = lookupHistoryKey.value;
-                const valCol = lookupHistoryValue.value;
-                if (!keyCol || !valCol) {
-                    alert('Please select the Key and Value columns for the lookup table.');
-                    return;
-                }
-                lookupMap = new Map(lookupData.map(r => [String(r[keyCol]), r[valCol]]));
+                const keyCol = document.getElementById('lookupHistorySelect').value ? document.getElementById('lookupCurrentKey').value : '';
+                const valCol = document.getElementById('lookupHistoryValue').value;
 
-                // ✅ Check if formula is PURE lookup (no arithmetic operations)
-                // Pattern: "lookup([SomeColumn])" with no other operations like +, -, *, /
+                // Note: The lookup UI is on a different tab, so we only validate if it looks like a lookup was intended
+                // But simplified: if formula has "lookup(", we assume user wants lookup.
+                // We need to support lookup map creation if valid columns selected.
+                if (keyCol && valCol) {
+                    lookupMap = new Map(lookupData.map(r => [String(r[keyCol]), r[valCol]]));
+                }
+
                 const pureLookupPattern = /^lookup\(\[.*?\]\)\s*$/;
                 isPureLookup = pureLookupPattern.test(formulaStr.trim());
 
-                // ✅ For pure lookup, use raw value; for formulas with operations, use safeNum
                 if (isPureLookup) {
-                    // Direct lookup - return raw value (string, number, whatever)
                     formulaStr = formulaStr.replace(/lookup\(\[(.*?)\]\)/g, (m, p1) => `lookupMap.get(String(row['${p1}']))`);
                 } else {
-                    // Formula with operations - convert to number
                     formulaStr = formulaStr.replace(/lookup\(\[(.*?)\]\)/g, (m, p1) => `safeNum(lookupMap.get(String(row['${p1}'])))`);
                 }
             }
-            // ✅ UPDATED: safeNum to handle VND format (dot as thousand separator)
+
+            // ✅ UPDATED: safeNum to handle Currency, VN Format, and stripping
             const isVNModeFormula = currentMode.toLowerCase().includes('vn');
             const safeNum = (v) => {
                 if (v === null || v === undefined) return 0;
                 let str = v.toString().trim();
 
-                // ✅ VN mode: dot is thousand separator (278.752 = 278752)
-                // Check if it's VN format: has dots but no commas, or has multiple dots
+                // Strip currency symbols ($, đ, etc)
+                str = str.replace(/[$,đ€£¥]/g, '').trim();
+
+                // VN Mode handling (dots as thousands)
                 if (isVNModeFormula) {
-                    // If string has dots but no decimal comma, treat dots as thousand separators
-                    // 278.752 -> 278752 (VND)  
-                    // But 0.5 should remain 0.5 (actual decimal)
                     const dotCount = (str.match(/\./g) || []).length;
                     if (dotCount >= 1 && !str.includes(',')) {
-                        // Check if it looks like VND (number with dots as separators)
-                        // e.g., "278.752" or "1.234.567" - likely VND
-                        // e.g., "0.5" or "1.25" - likely decimal
                         const parts = str.split('.');
-                        // If all parts after first are 3 digits, it's VND format
                         const isVNDFormat = parts.slice(1).every(p => p.length === 3);
                         if (isVNDFormat && parts.length > 1) {
-                            str = str.replace(/\./g, ''); // Remove all dots
+                            str = str.replace(/\./g, '');
                         }
                     }
                 }
-
-                // Standard handling: remove commas
+                // Remove commas
                 const n = parseFloat(str.replace(/,/g, ''));
                 return isNaN(n) ? 0 : n;
             };
 
-            // ✅ For pure lookup, don't wrap columns in safeNum
+            // ✅ Format Helper
+            const formatResult = (val, curr) => {
+                if (val === null || val === undefined || isNaN(val)) return '';
+                if (curr === 'USD') {
+                    // USD: $ + dot thousands (VN style requested for > 6 digits)
+                    // We use vi-VN locale for dots-as-thousands
+                    let s = val.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                    return '$' + s;
+                } else if (curr === 'VND') {
+                    // VND: Round to unit + dot thousands
+                    let s = Math.round(val).toLocaleString('vi-VN').replace(/,/g, '.');
+                    return s + ' đ';
+                } else if (curr === 'CNY') {
+                    // CNY: ¥ + 2 decimals
+                    let s = val.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                    return '¥' + s;
+                } else {
+                    // Default logic
+                    return isVNModeFormula ? Math.round(val) : val.toFixed(2);
+                }
+            };
+
             let jsExpr;
             if (isPureLookup) {
-                jsExpr = formulaStr; // Already has lookupMap.get()
+                jsExpr = formulaStr;
             } else {
                 jsExpr = formulaStr.replace(/\[(.*?)\]/g, (m, p1) => `safeNum(row['${p1.trim()}'])`);
             }
 
             try {
                 const func = new Function('row', 'safeNum', 'lookupMap', `return ${jsExpr}`);
-                const isVNMode = currentMode.toLowerCase().includes('vn'); // ✅ Check VN mode for rounding
+
                 currentData.forEach(row => {
                     try {
                         const res = func(row, safeNum, lookupMap);
-                        // ✅ For pure lookup, keep raw value; for formulas, format as number
                         if (isPureLookup) {
                             row[colName] = res ?? '';
                         } else if (typeof res === 'number' && !isNaN(res)) {
-                            // ✅ VN-WW mode: round to whole number (no decimals)
-                            // Other modes: keep 2 decimal places
-                            row[colName] = isVNMode ? Math.round(res) : res.toFixed(2);
+                            // Apply formatting based on currency selection
+                            row[colName] = formatResult(res, currency);
                         } else {
                             row[colName] = res ?? '';
                         }
                     } catch (e) { row[colName] = "Error"; }
                 });
+
                 userAddedColumns.add(colName);
                 renderTable(currentData);
                 formulaModalObj.hide();
 
-                // Prompt to save
                 if (confirm(`Formula applied successfully for column "${colName}".\n\nDo you want to save this formula for future use?`)) {
                     // Use the original formula string before it was modified for JS execution
-                    saveFormula(colName, originalFormulaStr);
+                    saveFormula(colName, originalFormulaStr, currency);
                 }
 
             } catch (e) {
@@ -1075,7 +1132,7 @@
                     const nameDiv = document.createElement('div');
                     nameDiv.innerHTML = `<div class="fw-bold"></div><code class="small text-muted"></code>`;
                     nameDiv.querySelector('.fw-bold').textContent = f.name;
-                    nameDiv.querySelector('code').textContent = f.formula;
+                    nameDiv.querySelector('code').textContent = f.formula + (f.currency ? ` [${f.currency}]` : '');
 
                     const btnGroup = document.createElement('div');
                     btnGroup.className = 'btn-group';
@@ -1085,8 +1142,9 @@
                     applyBtn.textContent = 'Apply';
                     applyBtn.dataset.formulaName = f.name;
                     applyBtn.dataset.formulaStr = f.formula;
+                    applyBtn.dataset.currency = f.currency || ''; // ✅ Store currency
                     applyBtn.onclick = function () {
-                        applySavedFormulaAsNewColumn(this.dataset.formulaName, this.dataset.formulaStr);
+                        applySavedFormulaAsNewColumn(this.dataset.formulaName, this.dataset.formulaStr, this.dataset.currency);
                     };
 
                     const deleteBtn = document.createElement('button');
@@ -1121,15 +1179,44 @@
         }
     }
 
-    async function applySavedFormulaAsNewColumn(name, formulaStr) {
+    async function applySavedFormulaAsNewColumn(name, formulaStr, currency) {
         const colName = prompt("Enter a name for the new column:", name);
         if (!colName) return;
 
-        // This is a simplified version of the main applyFormula logic
+        // Validating duplicate column
+        if (currentData.length > 0 && Object.keys(currentData[0]).includes(colName)) {
+            alert(`Column "${colName}" already exists.`); return;
+        }
+
+        const isVNModeFormula = currentMode.toLowerCase().includes('vn');
         const safeNum = (v) => {
             if (v === null || v === undefined) return 0;
-            const n = parseFloat(v.toString().replace(/,/g, ''));
+            let str = v.toString().trim();
+            str = str.replace(/[$,đ€£¥]/g, '').trim();
+            if (isVNModeFormula) {
+                const dotCount = (str.match(/\./g) || []).length;
+                if (dotCount >= 1 && !str.includes(',')) {
+                    const parts = str.split('.');
+                    if (parts.slice(1).every(p => p.length === 3) && parts.length > 1) {
+                        str = str.replace(/\./g, '');
+                    }
+                }
+            }
+            const n = parseFloat(str.replace(/,/g, ''));
             return isNaN(n) ? 0 : n;
+        };
+
+        const formatResult = (val, curr) => {
+            if (val === null || val === undefined || isNaN(val)) return '';
+            if (curr === 'USD') {
+                return '$' + val.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            } else if (curr === 'VND') {
+                return Math.round(val).toLocaleString('vi-VN').replace(/,/g, '.') + ' đ';
+            } else if (curr === 'CNY') {
+                return '¥' + val.toLocaleString('vi-VN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+            } else {
+                return isVNModeFormula ? Math.round(val) : val.toFixed(2);
+            }
         };
 
         // Note: This simplified version does not support lookup from a saved formula.
@@ -1139,7 +1226,11 @@
             currentData.forEach(row => {
                 try {
                     const res = func(row, safeNum);
-                    row[colName] = (typeof res === 'number' && !isNaN(res)) ? res.toFixed(2) : (res ?? '');
+                    if (typeof res === 'number' && !isNaN(res)) {
+                        row[colName] = formatResult(res, currency);
+                    } else {
+                        row[colName] = res ?? '';
+                    }
                 } catch (e) { row[colName] = "Error"; }
             });
             userAddedColumns.add(colName);

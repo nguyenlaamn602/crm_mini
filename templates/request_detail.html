@@ -6,37 +6,37 @@
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <a href="{{ url_for('view_tasks') }}?type=request" class="text-decoration-none text-secondary small fw-bold">
+            <a href="{{ url_for('view_tasks') }}?type=request"
+                class="text-decoration-none text-secondary small fw-bold">
                 <i class="bi bi-arrow-left me-1"></i> Back to Tasks
             </a>
             <h3 class="fw-bold mt-2 mb-0 text-dark">Request Details</h3>
             <span class="text-muted small">ID: {{ req.id }}</span>
         </div>
-        
+
         <!-- Quick Status Actions (Unified) -->
         <div>
             {% set s_display = req.status if req.status in statuses else 'todo' %}
             <div class="dropdown">
-              <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
+                <button class="btn btn-lg rounded-pill px-4 dropdown-toggle 
                      {% if s_display == 'todo' %}btn-secondary
                      {% elif s_display == 'waiting' %}btn-info text-white
                      {% elif s_display == 'doing' %}btn-warning text-white
                      {% elif s_display == 'done' %}btn-success
                      {% elif s_display == 'overdue' %}btn-danger
                      {% elif s_display == 'cancelled' %}btn-dark
-                     {% endif %}"
-                     type="button" data-bs-toggle="dropdown">
-                {{ s_display|upper }}
-              </button>
-              <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2">
-                {% for s in statuses %}
+                     {% endif %}" type="button" data-bs-toggle="dropdown">
+                    {{ s_display|upper }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-2">
+                    {% for s in statuses %}
                     <li>
                         <button class="dropdown-item rounded-2" onclick="updateDetailStatus('{{ req.id }}', '{{ s }}')">
                             {{ s|upper }}
                         </button>
                     </li>
-                {% endfor %}
-              </ul>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
     </div>
@@ -50,9 +50,8 @@
                         Request Content <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                     </h5>
                     <!-- EDITABLE CONTENT -->
-                    <div id="content" 
-                         class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2"
-                         onclick="makeEditable(this, 'content', 'textarea')">
+                    <div id="content" class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2"
+                        onclick="makeEditable(this, 'content', 'textarea')">
                         {{ req.content }}
                     </div>
 
@@ -60,9 +59,8 @@
                     <h5 class="fw-bold text-muted mb-3 text-uppercase small mt-4">
                         Result / Outcome <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                     </h5>
-                    <div id="result" 
-                         class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2 bg-light border"
-                         onclick="makeEditable(this, 'result', 'textarea')">
+                    <div id="result" class="fs-5 text-dark fw-medium mb-4 editable-field p-2 rounded-2 bg-light border"
+                        onclick="makeEditable(this, 'result', 'textarea')">
                         {{ req.result or '---' }}
                     </div>
 
@@ -73,15 +71,14 @@
                             <label class="small text-muted fw-bold">
                                 Customer <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                             </label>
-                            <div id="customer_name" 
-                                 class="fw-semibold fs-5 editable-field p-1 rounded-2 text-primary"
-                                 onclick="makeEditable(this, 'customer_name', 'text')">
+                            <div id="customer_name" class="fw-semibold fs-5 editable-field p-1 rounded-2 text-primary"
+                                onclick="makeEditable(this, 'customer_name', 'text')">
                                 {{ req.customer_name or 'Unknown' }}
                             </div>
                             {% if req.customer_psid %}
-                                <a href="/customer/{{ req.customer_psid }}" class="text-decoration-none small text-muted">
-                                    <i class="bi bi-box-arrow-up-right me-1"></i> View Profile
-                                </a>
+                            <a href="/customer/{{ req.customer_psid }}" class="text-decoration-none small text-muted">
+                                <i class="bi bi-box-arrow-up-right me-1"></i> View Profile
+                            </a>
                             {% endif %}
                         </div>
 
@@ -96,21 +93,25 @@
                         <!-- ✅ NEW: ASSIGNEE (CHECKLIST MODAL) -->
                         <div class="col-md-6">
                             <label class="small text-muted fw-bold">
-                                Assignee <span class="badge bg-light text-secondary border rounded-pill ms-1 clickable-badge" data-bs-toggle="modal" data-bs-target="#editAssigneeModal"><i class="bi bi-pencil-fill"></i> Edit</span>
+                                Assignee <span
+                                    class="badge bg-light text-secondary border rounded-pill ms-1 clickable-badge"
+                                    data-bs-toggle="modal" data-bs-target="#editAssigneeModal"><i
+                                        class="bi bi-pencil-fill"></i> Edit</span>
                             </label>
                             <div class="d-flex align-items-center mt-2 flex-wrap gap-1">
                                 {% if req.assignees and req.assignees|length > 0 %}
-                                    {% for name in req.assignees %}
-                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">
-                                            {{ name }}
-                                        </span>
-                                    {% endfor %}
+                                {% for name in req.assignees %}
+                                <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">
+                                    {{ name }}
+                                </span>
+                                {% endfor %}
                                 {% else %}
-                                    {% if req.assignee and req.assignee != '---' %}
-                                        <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">{{ req.assignee }}</span>
-                                    {% else %}
-                                        <span class="text-muted small">Unassigned</span>
-                                    {% endif %}
+                                {% if req.assignee and req.assignee != '---' %}
+                                <span class="badge bg-primary-subtle text-primary border rounded-pill px-2 py-1">{{
+                                    req.assignee }}</span>
+                                {% else %}
+                                <span class="text-muted small">Unassigned</span>
+                                {% endif %}
                                 {% endif %}
                             </div>
                         </div>
@@ -120,9 +121,8 @@
                             <label class="small text-muted fw-bold">
                                 Note (Process Status) <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                             </label>
-                            <div id="note" 
-                                 class="fw-bold fs-5 editable-field p-1 rounded-2 text-dark"
-                                 onclick='makeEditable(this, "note", "select", {{ request_statuses | tojson | safe }})'>
+                            <div id="note" class="fw-bold fs-5 editable-field p-1 rounded-2 text-dark"
+                                onclick='makeEditable(this, "note", "select", {{ request_statuses | tojson | safe }})'>
                                 {{ req.note or '---' }}
                             </div>
                         </div>
@@ -132,10 +132,42 @@
                             <label class="small text-muted fw-bold">
                                 Business Type <i class="bi bi-pencil-fill text-muted opacity-25 ms-1 small"></i>
                             </label>
-                            <div id="business_type" 
-                                 class="fw-medium fs-5 editable-field p-1 rounded-2 text-dark"
-                                 onclick='makeEditable(this, "business_type", "select", {{ business_types | tojson | safe }})'>
+                            <div id="business_type" class="fw-medium fs-5 editable-field p-1 rounded-2 text-dark"
+                                onclick='makeEditable(this, "business_type", "select", {{ business_types | tojson | safe }})'>
                                 {{ req.business_type or 'New' }}
+                            </div>
+                        </div>
+
+                        <!-- ✅ NEW: REQUEST TYPE & DEADLINE -->
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">Request Type</label>
+                            <div class="fw-medium fs-5 text-dark mt-1">
+                                {{ req.request_type or 'Báo giá' }}
+                                {% if req.request_type == 'Báo giá' %}
+                                <span class="badge bg-light text-secondary border ms-1">{{ req.quotation_subtype or
+                                    'normal' }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="small text-muted fw-bold">Deadline / Duration</label>
+                            <div class="mt-1">
+                                {% if req.due_at %}
+                                <span
+                                    class="fs-5 fw-bold {% if req.status == 'overdue' or (req.status not in ['done','cancelled'] and req.due_at < now_dt()) %}text-danger{% else %}text-primary{% endif %}">
+                                    <i class="bi bi-clock me-1"></i>{{ req.due_at.strftime('%H:%M %d/%m') }}
+                                </span>
+                                {% else %}
+                                <span class="small text-muted">No deadline</span>
+                                {% endif %}
+
+                                {% if req.processing_time %}
+                                <div class="small text-success fw-bold mt-1">
+                                    <i class="bi bi-stopwatch"></i> Processed: {{ (req.processing_time / 3600)|round(1)
+                                    }}h
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
 
@@ -152,27 +184,29 @@
 
         <!-- Right Column: Attachment & Actions -->
         <div class="col-lg-4">
-             <!-- ✅ NEW: Attachment Card (Copied from task_detail) -->
+            <!-- ✅ NEW: Attachment Card (Copied from task_detail) -->
             <div class="card border-0 shadow-sm rounded-4 mb-4">
                 <div class="card-header bg-white border-0 pt-4 pb-0 px-4">
                     <h6 class="fw-bold text-dark mb-0"><i class="bi bi-paperclip me-2"></i>Attachment</h6>
                 </div>
                 <div class="card-body p-4">
                     {% if req.attachment %}
-                        <div class="p-3 bg-light rounded-3 border mb-3">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-file-earmark-text fs-3 text-primary me-3"></i>
-                                <div class="overflow-hidden">
-                                    <div class="fw-bold text-truncate" title="{{ req.attachment }}">{{ req.attachment }}</div>
-                                    <a href="{{ url_for('static', filename='uploads/' + req.attachment) }}" target="_blank" class="small text-decoration-none">View / Download</a>
+                    <div class="p-3 bg-light rounded-3 border mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-file-earmark-text fs-3 text-primary me-3"></i>
+                            <div class="overflow-hidden">
+                                <div class="fw-bold text-truncate" title="{{ req.attachment }}">{{ req.attachment }}
                                 </div>
+                                <a href="{{ url_for('static', filename='uploads/' + req.attachment) }}" target="_blank"
+                                    class="small text-decoration-none">View / Download</a>
                             </div>
                         </div>
+                    </div>
                     {% else %}
-                        <div class="text-center text-muted py-3">
-                            <i class="bi bi-file-earmark-x fs-1 opacity-25"></i>
-                            <p class="small mt-2">No file attached</p>
-                        </div>
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-file-earmark-x fs-1 opacity-25"></i>
+                        <p class="small mt-2">No file attached</p>
+                    </div>
                     {% endif %}
 
                     <hr class="my-3">
@@ -203,11 +237,13 @@
                         </form>
 
                         {% if current_user.role in ['superadmin', 'admin'] %}
-                        <form action="/request/customer/delete/{{ req.id }}" method="POST" onsubmit="return confirm('Permanently delete this request?')">
+                        <form action="/request/customer/delete/{{ req.id }}" method="POST"
+                            onsubmit="return confirm('Permanently delete this request?')">
                             <button class="btn btn-outline-danger w-100 rounded-pill">Delete Request</button>
                         </form>
                         {% else %}
-                        <button class="btn btn-outline-secondary w-100 rounded-pill" disabled>No Actions Available</button>
+                        <button class="btn btn-outline-secondary w-100 rounded-pill" disabled>No Actions
+                            Available</button>
                         {% endif %}
                     </div>
                 </div>
@@ -229,9 +265,9 @@
                     {% for u in users_list %}
                     <!-- ✅ FIX: Added position-relative to fix stretched-link issue -->
                     <div class="form-check p-2 border-bottom position-relative">
-                        <input class="form-check-input ms-1" type="checkbox" id="chk_{{ u._id }}_{{ loop.index }}" 
-                               value="{{ u._id }}" 
-                               {% if u._id in (req.assigned_to if req.assigned_to is iterable and req.assigned_to is not string else []) %}checked{% endif %}>
+                        <input class="form-check-input ms-1" type="checkbox" id="chk_{{ u._id }}_{{ loop.index }}"
+                            value="{{ u._id }}" {% if u._id in (req.assigned_to if req.assigned_to is iterable and
+                            req.assigned_to is not string else []) %}checked{% endif %}>
                         <!-- ✅ FIX: Unique ID using loop.index -->
                         <label class="form-check-label ms-2 stretched-link" for="chk_{{ u._id }}_{{ loop.index }}">
                             {{ u.username }}
@@ -241,19 +277,47 @@
                 </div>
             </div>
             <div class="modal-footer border-0 bg-light p-2">
-                <button type="button" class="btn btn-primary btn-sm w-100 rounded-pill" onclick="saveAssignees()">Save Changes</button>
+                <button type="button" class="btn btn-primary btn-sm w-100 rounded-pill" onclick="saveAssignees()">Save
+                    Changes</button>
             </div>
         </div>
     </div>
 </div>
 
 <style>
-    .editable-field { cursor: pointer; transition: all 0.2s ease; border: 1px solid transparent; }
-    .editable-field:hover { background-color: #f8f9fa; border-color: #dee2e6; }
-    .clickable-badge { cursor: pointer; transition: opacity 0.2s; }
-    .clickable-badge:hover { opacity: 0.8; }
-    @keyframes flash-success { 0% { background-color: #d1e7dd; } 100% { background-color: transparent; } }
-    .flash-saved { animation: flash-success 1s ease-out; }
+    .editable-field {
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+    }
+
+    .editable-field:hover {
+        background-color: #f8f9fa;
+        border-color: #dee2e6;
+    }
+
+    .clickable-badge {
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+
+    .clickable-badge:hover {
+        opacity: 0.8;
+    }
+
+    @keyframes flash-success {
+        0% {
+            background-color: #d1e7dd;
+        }
+
+        100% {
+            background-color: transparent;
+        }
+    }
+
+    .flash-saved {
+        animation: flash-success 1s ease-out;
+    }
 </style>
 
 <script>
@@ -309,7 +373,7 @@
             payload[fieldName] = value;
             const res = await fetch(`/request/customer/update/${REQ_ID}`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
@@ -322,20 +386,20 @@
     async function saveAssignees() {
         const checkboxes = document.querySelectorAll('#editAssigneeModal input[type="checkbox"]:checked');
         const ids = Array.from(checkboxes).map(cb => cb.value);
-        
+
         try {
             const res = await fetch(`/request/customer/update/${REQ_ID}`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 body: JSON.stringify({ assigned_user_ids: ids })
             });
-            
+
             if (res.ok) {
                 window.location.reload();
             } else {
                 alert("Failed to update assignees.");
             }
-        } catch(e) { console.error(e); alert("Network Error"); }
+        } catch (e) { console.error(e); alert("Network Error"); }
     }
 
     async function updateDetailStatus(reqId, newStatus) {
@@ -345,12 +409,12 @@
             const res = await fetch(`/task/quick-update/${reqId}`, {
                 method: 'POST',
                 body: formData,
-                headers: {'X-Requested-With': 'XMLHttpRequest'}
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
             });
             const data = await res.json();
             if (data.status === 'success') window.location.reload();
             else alert('Failed to update status.');
-        } catch(e) { console.error(e); alert('Error'); }
+        } catch (e) { console.error(e); alert('Error'); }
     }
 </script>
 {% endblock %}

@@ -147,6 +147,8 @@ UNIFIED_STATUSES = ["todo", "doing", "waiting", "done", "overdue", "cancelled"]
 # ✅ NEW: Customer Request Constants
 REQUEST_STATUSES = ["Request", "Thanh toán", "Lên đơn", "Trouble"]
 BUSINESS_TYPES = ["POD/Dropship", "Warehouse", "Express", "New"]
+REQUEST_TYPES = ["Báo giá", "Sourcing"]
+QUOTATION_SUBTYPES = ["normal", "advanced"]
 
 # ✅ NEW: Roles
 SUPERADMIN_ROLE = "superadmin"
@@ -617,14 +619,17 @@ def send_telegram_notification(chat_id, text):
 def send_status_change_notification(task_doc, new_status, task_type="Task"):
     try:
         creator = None
-        if task_type == "Corp Task" or task_type == "Department Task":
-            creator_name = task_doc.get("assigned_by")
+        # Corp Task, Department Task, Customer Request dùng assigned_by/sender_name
+        if task_type in ["Corp Task", "Department Task", "Customer Request"]:
+            creator_name = task_doc.get("assigned_by") or task_doc.get("sender_name")
             if creator_name:
                 creator = db.users.find_one({"username": creator_name})
         else:
+            # Normal Task dùng user_id
             user_id = task_doc.get("user_id")
             if user_id:
                 creator = db.users.find_one({"_id": user_id})
+
 
         if creator and creator.get("telegram_chat_id"):
             creator_id_str = str(creator['_id'])
@@ -1321,7 +1326,7 @@ def view_tasks():
             all_items.append(t)
     if not filter_type or filter_type == 'request':
         for r in db.customer_requests.find(final_queries['request']):
-            r.update({'kind': 'request', 'todo_content': r.get('content'), 'due_at': None})
+            r.update({'kind': 'request', 'todo_content': r.get('content')})
             if 'assignees' not in r: r['assignees'] = [r.get('assignee')] if r.get('assignee') else []
             if not r['assignees']: r['assignees'] = [r.get('sender_name')] if r.get('sender_name') else []
             r['assignee'] = r['assignees'][0] if r['assignees'] else '---'
@@ -1510,6 +1515,12 @@ def update_task_detail(id):
                 except: pass
 
         db[col_name].update_one({"id": id}, {"$set": upd})
+        
+        # ✅ NEW: Notify creator when status changes via JSON
+        if 'status' in data:
+            task_type_map = {'tasks': 'Task', 'corp_tasks': 'Corp Task', 'department_tasks': 'Department Task', 'customer_requests': 'Customer Request'}
+            send_status_change_notification(task, data['status'], task_type_map.get(col_name, 'Task'))
+        
         return jsonify({"status": "success"})
 
     upd = {"status": request.form.get('status'), "due_at": parse_due_at(request.form.get('due_at')), "updated_at": now_dt()}
@@ -1528,6 +1539,12 @@ def update_task_detail(id):
         if f: upd["attachment"] = f
 
     db[col_name].update_one({"id": id}, {"$set": upd})
+    
+    # ✅ NEW: Notify creator when status changes via Form
+    if upd.get('status'):
+        task_type_map = {'tasks': 'Task', 'corp_tasks': 'Corp Task', 'department_tasks': 'Department Task', 'customer_requests': 'Customer Request'}
+        send_status_change_notification(task, upd['status'], task_type_map.get(col_name, 'Task'))
+    
     if 'detail' in request.form.get('source_page', ''): return redirect(url_for('view_task_detail_page', id=id))
     return redirect(url_for('view_tasks' if col_name == 'tasks' else ('view_corp_tasks' if col_name == 'corp_tasks' else 'view_personal_tasks')))
 
@@ -1567,16 +1584,44 @@ def quick_update_task(id):
     upd = {"status": nst, "updated_at": now_dt()}
     
     # ✅ Preserve Old Status as Note if transitioning from Request Status
+    # ✅ NEW: Customer Request Logic (Deadline & Timer)
     if col == 'customer_requests':
         current_s = t.get('status')
+        # Preserve old status
         if current_s in REQUEST_STATUSES and not t.get('note'):
             upd['note'] = current_s
+            
+        # START DOING -> Set Deadline (Only first time)
+        if nst == 'doing' and current_s != 'doing':
+            # ✅ FIX: Only set deadline if never started before
+            if not t.get('doing_started_at'):
+                req_type = t.get('request_type')
+                subtype = t.get('quotation_subtype')
+                upd['doing_started_at'] = now_dt()
+                
+                if req_type == 'Sourcing':
+                    upd['due_at'] = now_dt() + timedelta(hours=72)
+                elif req_type == 'Báo giá' and subtype == 'normal':
+                    upd['due_at'] = now_dt() + timedelta(hours=24)
+            # Báo giá advanced: No deadline set
+
+        # DONE -> Calc Processing Time
+        if nst == 'done' and t.get('doing_started_at'): # use t.get because db load
+            # Note: t is old doc. if doing_started_at was just set in this same update, we can't use t.
+            # But typically doing -> done are separate steps.
+            start_time = t.get('doing_started_at')
+            if start_time:
+                duration = (now_dt() - start_time).total_seconds()
+                upd['processing_time'] = duration
 
     # Special logic for requests if needed (no overdue logic usually)
     if nst == "overdue": upd.update({"missed_at": now_dt(), "missed_notify_pending": True})
     
     db[col].update_one({"id": id}, {"$set": upd})
-    send_status_change_notification(t, nst, "Task")
+    
+    # ✅ FIX: Gửi notification với đúng task_type dựa trên collection
+    task_type_map = {'tasks': 'Task', 'corp_tasks': 'Corp Task', 'department_tasks': 'Department Task', 'customer_requests': 'Customer Request'}
+    send_status_change_notification(t, nst, task_type_map.get(col, 'Task'))
     
     return jsonify({"status": "success", "next": nst})
 
@@ -2312,9 +2357,17 @@ def add_customer_request():
             assignees = [u.get("username", "user") for u in users]
         except: pass
 
+    # ✅ NEW: Request Type Logic
+    req_type = request.form.get("request_type") or "Báo giá"
+    qt_subtype = request.form.get("quotation_subtype") or "normal"
+    
+    # Init deadlines if created directly (future proof, though currently usually starts at todo)
+    # If we ever allow creating as 'doing', we'd calculate deadline here. 
+    # For now, default status is 'todo'.
+
     rid = 'req_' + ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
     
-    db.customer_requests.insert_one({
+    doc = {
         "id": rid,
         "content": content,
         "customer_name": norm_name or customer_name,
@@ -2323,6 +2376,8 @@ def add_customer_request():
         "status": "todo", # ✅ Default unified status
         "note": note_val, # ✅ Store old status as Note
         "business_type": business_type,
+        "request_type": req_type,       # ✅ NEW
+        "quotation_subtype": qt_subtype, # ✅ NEW
         "created_at": now_dt(),
         "assigned_by": current_user.username,
         "sender_name": current_user.username,
@@ -2330,7 +2385,9 @@ def add_customer_request():
         "assignees": assignees,      # ✅ List[str]
         "assignee": assignees[0] if assignees else None,
         "attachment": save_uploaded_file(request.files.get('attachment')) # ✅ Add Attachment
-    })
+    }
+    
+    db.customer_requests.insert_one(doc)
     
     # ✅ AUTO SEND TELEGRAM (Notify Assignees)
     if assigned_to:
@@ -2389,8 +2446,36 @@ def update_customer_request(id):
         if customer_psid: upd['customer_psid'] = customer_psid
         
     if 'status' in data:
-        if data['status'] in UNIFIED_STATUSES:
-            upd['status'] = data['status']
+        new_s = data['status']
+        if new_s in UNIFIED_STATUSES:
+            upd['status'] = new_s
+            
+            # ✅ NEW: Customer Request Deadline Logic
+            current_s = req.get('status')
+            
+            # START DOING -> Set Deadline (Only first time)
+            if new_s == 'doing' and current_s != 'doing':
+                # ✅ FIX: Only set deadline if never started before
+                if not req.get('doing_started_at'):
+                    req_type = req.get('request_type')
+                    subtype = req.get('quotation_subtype')
+                    upd['doing_started_at'] = now_dt()
+                    
+                    if req_type == 'Sourcing':
+                        upd['due_at'] = now_dt() + timedelta(hours=72)
+                    elif req_type == 'Báo giá' and subtype == 'normal':
+                        upd['due_at'] = now_dt() + timedelta(hours=24)
+            
+            # DONE -> Calc Processing Time
+            if new_s == 'done' and req.get('doing_started_at'):
+                start_time = req.get('doing_started_at')
+                # Note: If start_time was just set, we might miss it if we rely on req.
+                # Ideally, check if we just set it in 'upd'.
+                if 'doing_started_at' in upd: start_time = upd['doing_started_at']
+                
+                if start_time:
+                    duration = (now_dt() - start_time).total_seconds()
+                    upd['processing_time'] = duration
 
     if 'note' in data:
         upd['note'] = data['note']
@@ -2416,6 +2501,11 @@ def update_customer_request(id):
             except: pass
 
     db.customer_requests.update_one({"id": id}, {"$set": upd})
+    
+    # ✅ NEW: Notify creator when status changes
+    if 'status' in upd:
+        send_status_change_notification(req, upd['status'], "Customer Request")
+    
     return jsonify({"status": "success"})
 
 @app.route('/request/customer/delete/<id>', methods=['POST'])
@@ -3126,6 +3216,7 @@ def save_pricing_formula():
         {"$set": {
             "name": name,
             "formula": formula_str,
+            "currency": data.get('currency'), # ✅ Save currency
             "user_id": ObjectId(current_user.id),
             "updated_at": now_dt()
         }},

@@ -9,16 +9,18 @@
             <h4 class="fw-bold mb-0">Customer Requests</h4>
             <p class="text-muted small">Automated messages from Telegram/Zalo & Manual Requests</p>
         </div>
-        
+
         <div class="d-flex gap-2">
             <!-- Add Manual Request Button (Styled like Tasks) -->
-            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-2" data-bs-toggle="modal" data-bs-target="#addRequestModal">
+            <button class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm mt-2" data-bs-toggle="modal"
+                data-bs-target="#addRequestModal">
                 <i class="bi bi-plus-lg me-1"></i> Add Request
             </button>
-            
+
             <form class="d-flex" method="GET">
                 <div class="input-group">
-                    <input type="text" name="search" class="form-control" placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
+                    <input type="text" name="search" class="form-control" placeholder="Search customer name..."
+                        value="{{ request.args.get('search', '') }}">
                     <button class="btn btn-primary" type="submit">Search</button>
                 </div>
             </form>
@@ -44,7 +46,8 @@
                     <tbody>
                         {% for req in requests %}
                         <!-- Clickable row to detail, except action column -->
-                        <tr style="cursor: pointer;" onclick="window.location.href='{{ url_for('view_customer_request_detail', id=req.id) }}'">
+                        <tr style="cursor: pointer;"
+                            onclick="window.location.href='{{ url_for('view_customer_request_detail', id=req.id) }}'">
                             <td class="ps-4">
                                 <span class="badge rounded-pill px-3 
                                     {% if req.app == 'Tele' %}bg-info-subtle text-info
@@ -53,10 +56,11 @@
                                     {{ req.app }}
                                 </span>
                             </td>
-                            
+
                             <td>
                                 <div class="d-flex align-items-center">
-                                    <div class="bg-secondary bg-opacity-10 text-secondary rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-weight: bold; font-size: 0.8rem;">
+                                    <div class="bg-secondary bg-opacity-10 text-secondary rounded-circle d-flex align-items-center justify-content-center me-2"
+                                        style="width: 30px; height: 30px; font-weight: bold; font-size: 0.8rem;">
                                         {{ req.sender_name[0].upper() if req.sender_name else '?' }}
                                     </div>
                                     <div class="fw-bold text-dark small">{{ req.sender_name or 'System' }}</div>
@@ -66,7 +70,7 @@
                             <td>
                                 <div class="fw-bold text-primary">{{ req.customer_name }}</div>
                             </td>
-                            
+
                             <td>
                                 <span class="badge rounded-pill border px-2 py-1
                                     {% if req.status == 'Thanh toán' %}bg-success-subtle text-success border-success
@@ -82,23 +86,25 @@
                                     {{ req.business_type or 'New' }}
                                 </span>
                             </td>
-                            
+
                             <td>
                                 <div class="text-wrap text-secondary" style="max-width: 250px; font-size: 0.9rem;">
                                     {{ req.content }}
                                 </div>
                             </td>
-                            
+
                             <td>
                                 <div class="small text-muted fw-medium">
                                     {{ req.created_at.strftime('%H:%M %d/%m') if req.created_at else '---' }}
                                 </div>
                             </td>
-                            
+
                             <td class="text-end pe-4" onclick="event.stopPropagation()">
                                 {% if current_user.role == 'admin' %}
-                                <form action="{{ url_for('delete_customer_request', id=req.id) }}" method="POST" onsubmit="return confirm('Delete this request?');">
-                                    <button type="submit" class="btn btn-outline-danger btn-sm rounded-circle shadow-sm" style="width: 32px; height: 32px; padding: 0;">
+                                <form action="{{ url_for('delete_customer_request', id=req.id) }}" method="POST"
+                                    onsubmit="return confirm('Delete this request?');">
+                                    <button type="submit" class="btn btn-outline-danger btn-sm rounded-circle shadow-sm"
+                                        style="width: 32px; height: 32px; padding: 0;">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
@@ -132,20 +138,40 @@
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">REQUEST CONTENT</label>
-                        <textarea name="content" class="form-control rounded-3" rows="3" required placeholder="Enter request details..."></textarea>
+                        <textarea name="content" class="form-control rounded-3" rows="3" required
+                            placeholder="Enter request details..."></textarea>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-bold text-muted small">CUSTOMER NAME</label>
-                        <input type="text" name="customer_name" class="form-control rounded-3" placeholder="Enter name...">
+                        <input type="text" name="customer_name" class="form-control rounded-3"
+                            placeholder="Enter name...">
                     </div>
 
                     <div class="row g-3">
                         <div class="col-md-6">
+                            <label class="form-label fw-bold text-muted small">REQUEST TYPE</label>
+                            <select name="request_type" id="request_type" class="form-select rounded-3"
+                                onchange="toggleSubtype()">
+                                <option value="Báo giá">Báo giá</option>
+                                <option value="Sourcing">Sourcing</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="subtype_div">
+                            <label class="form-label fw-bold text-muted small">SUBTYPE</label>
+                            <select name="quotation_subtype" class="form-select rounded-3">
+                                <option value="normal">Normal (24h)</option>
+                                <option value="advanced">Advanced (Auto)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
                             <label class="form-label fw-bold text-muted small">STATUS</label>
                             <select name="status" class="form-select rounded-3">
                                 {% for s in request_statuses %}
-                                <option value="{{ s }}" {% if s == 'Request' %}selected{% endif %}>{{ s }}</option>
+                                <option value="{{ s }}" {% if s=='Request' %}selected{% endif %}>{{ s }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -153,14 +179,25 @@
                             <label class="form-label fw-bold text-muted small">BUSINESS TYPE</label>
                             <select name="business_type" class="form-select rounded-3">
                                 {% for b in business_types %}
-                                <option value="{{ b }}" {% if b == 'New' %}selected{% endif %}>{{ b }}</option>
+                                <option value="{{ b }}" {% if b=='New' %}selected{% endif %}>{{ b }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                     </div>
                 </div>
+                <script>
+                    function toggleSubtype() {
+                        const t = document.getElementById('request_type').value;
+                        const d = document.getElementById('subtype_div');
+                        if (t === 'Báo giá') { d.style.visibility = 'visible'; }
+                        else { d.style.visibility = 'hidden'; }
+                    }
+                    // Init
+                    document.addEventListener("DOMContentLoaded", toggleSubtype);
+                </script>
                 <div class="modal-footer border-0 bg-light px-4 py-3">
-                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4"
+                        data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary rounded-pill px-4 shadow-sm">Create Request</button>
                 </div>
             </form>

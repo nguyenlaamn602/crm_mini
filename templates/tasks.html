@@ -380,7 +380,15 @@
                         </td>
 
                         <td>
-                            {% if t.note %}
+                            {% if t.kind == 'request' %}
+                            <span class="badge bg-warning-subtle text-dark border border-warning-subtle">
+                                {{ t.request_type or 'Báo giá' }}
+                                {% if t.request_type == 'Báo giá' and t.quotation_subtype %}
+                                <span class="ms-1" style="font-size: 0.8em; opacity: 0.6;">({{ t.quotation_subtype
+                                    }})</span>
+                                {% endif %}
+                            </span>
+                            {% elif t.note %}
                             <span
                                 class="badge bg-warning-subtle text-dark border border-warning-subtle d-inline-block text-truncate"
                                 style="max-width: 150px;" title="{{ t.note }}">
@@ -686,9 +694,37 @@
                         </div>
                     </div>
 
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-muted small">REQUEST TYPE</label>
+                            <select name="request_type" id="req_type_tasks" class="form-select rounded-3"
+                                onchange="toggleSubtypeTasks()">
+                                <option value="Báo giá">Báo giá</option>
+                                <option value="Sourcing">Sourcing</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6" id="subtype_div_tasks">
+                            <label class="form-label fw-bold text-muted small">SUBTYPE</label>
+                            <select name="quotation_subtype" class="form-select rounded-3">
+                                <option value="normal">Normal (24h)</option>
+                                <option value="advanced">Advanced (Auto)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <script>
+                        function toggleSubtypeTasks() {
+                            const t = document.getElementById('req_type_tasks').value;
+                            const d = document.getElementById('subtype_div_tasks');
+                            if (t === 'Báo giá') { d.style.visibility = 'visible'; }
+                            else { d.style.visibility = 'hidden'; }
+                        }
+                        document.addEventListener("DOMContentLoaded", toggleSubtypeTasks);
+                    </script>
+
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold text-muted small">NOTE (Old Status)</label>
+                            <label class="form-label fw-bold text-muted small">NOTE </label>
                             <select name="note" class="form-select rounded-3">
                                 {% for s in request_statuses %}
                                 <option value="{{ s }}" {% if s=='Request' %}selected{% endif %}>{{ s }}</option>

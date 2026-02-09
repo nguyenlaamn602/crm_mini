@@ -776,25 +776,221 @@ def init_pancake_pages(force_refresh=True):
                 "username": p_username, "access_token": access_token, "updated_at": now_dt()
             }}, upsert=True)
 
-def sync_all_lark_task():
-    global LAST_SYNC_TIMESTAMP
-    tk = get_lark_token()
-    if not tk: return
+def helper_find_user_by_name(name):
+    """
+    Find user by exact username or close match.
+    Supports hardcoded mappings for specific Lark names.
+    """
+    if not name: return None
+    name_str = str(name).strip()
+    
+    # 1. Hardcoded mappings (Priority)
+    # Map Lark Name (or exact string) -> System Username
+    mapping = {
+        "Thu Nguyệt": "CS03_Nguyet",
+        "Mỹ Hạnh": "CS01_Hanh",
+        "Lê Huyền": "CS02_LHuyen",
+        "Chang": "FI01_Chang", # Note: User mentioned 'Fl01_Chang' (L lowercase), but debug output shows 'FI01_Chang' (I uppercase). Using FI01_Chang based on debug output.
+        "Nguyên Hảo": "CEO_NguyenHao",
+        "Duy": "MKT01_Duy",
+    }
+    
+    target_username = mapping.get(name_str)
+    
+    if target_username:
+        u = db.users.find_one({"username": target_username})
+        if u: return u['_id']
+    
+    # 2. Search in DB (Exact username match)
+    u = db.users.find_one({"username": name_str})
+    if u: return u['_id']
+    
+    # 3. Case-insensitive username match
     try:
-        res = requests.get(f"https://open.larksuite.com/open-apis/bitable/v1/apps/{LARK_APP_TOKEN}/tables/{LARK_TABLE_ID}/records", 
-                           headers={"Authorization": f"Bearer {tk}"}, params={"page_size": 500}, timeout=60).json()
-        for item in res.get('data', {}).get('items', []):
-            f = item.get('fields', {})
-            db.leads.update_one({"psid": item.get('record_id')}, {
-                "$set": {
-                    "full_name": f.get('Tên khách hàng'), "phone_number": f.get('Link FB/username tele'),
-                    "sector": classify_sector(f), "status": f.get('Trạng thái', 'Khách Mới'),
-                    "page_id": "LARK_AUTO", "source_platform": "Lark"
-                },
-                "$setOnInsert": {"updated_at": now_dt()}  # ✅ Only set on new records
-            }, upsert=True)
-        LAST_SYNC_TIMESTAMP = time.time()
+        u = db.users.find_one({"username": {"$regex": f"^{re.escape(name_str)}$", "$options": "i"}})
+        if u: return u['_id']
     except: pass
+    
+    return None
+
+def extract_lark_text(field_content):
+    """Helper to extract clean updating text from Lark rich text field."""
+    if not field_content: return None
+    if isinstance(field_content, str): return field_content
+    if isinstance(field_content, list):
+        # Often [{"type": "text", "text": "..."}]
+        parts = []
+        for p in field_content:
+            if isinstance(p, dict) and 'text' in p:
+                parts.append(p['text'])
+            elif isinstance(p, str):
+                parts.append(p)
+        return "\n".join(parts) if parts else None
+    return str(field_content)
+
+def helper_normalize_status(st):
+    """Normalize status strings from Lark to match system constants."""
+    st = str(st).strip()
+    if st == "Khách tiềm năng": return "Khách hàng tiềm năng"
+    if st == "Khách VIP 1": return "Khách Vip" # Example mapping if needed
+    return st
+
+def sync_lark_base_leads():
+    global LAST_SYNC_TIMESTAMP
+    print("⏳ Starting Lark Base Sync (Daily)...")
+    tk = get_lark_token()
+    if not tk: 
+        print("❌ Failed to get Lark Token")
+        return
+
+    try:
+        # 1. Fetch all records from Lark
+        all_items = []
+        page_token = None
+        
+        while True:
+            params = {"page_size": 100}
+            if page_token: params['page_token'] = page_token
+            
+            res = requests.get(
+                f"https://open.larksuite.com/open-apis/bitable/v1/apps/{LARK_APP_TOKEN}/tables/{LARK_TABLE_ID}/records", 
+                headers={"Authorization": f"Bearer {tk}"}, 
+                params=params, 
+                timeout=60
+            ).json()
+            
+            items = res.get('data', {}).get('items', [])
+            all_items.extend(items)
+            
+            if res.get('data', {}).get('has_more'):
+                page_token = res.get('data', {}).get('page_token')
+            else:
+                break
+        
+        print(f"✅ Fetched {len(all_items)} records from Lark.")
+        
+        # 2. Clear OLD Lark Leads (Keep Pancake leads)
+        del_res = db.leads.delete_many({"source_platform": "Lark"})
+        print(f"🧹 Cleared {del_res.deleted_count} old Lark leads.")
+
+        # 3. Process and Insert New Leads
+        inserted_count = 0
+        error_count = 0
+        for item in all_items:
+            try:
+                f = item.get('fields', {})
+                
+                # Mapping
+                cus_id = extract_lark_text(f.get('CUS'))
+                full_name = extract_lark_text(f.get('Tên khách hàng')) or 'Unknown'
+                # Info can be complex, usually just string URL or username
+                info_raw = f.get('Link FB/username tele')
+                info = extract_lark_text(info_raw)
+                
+                # Work Group & Platform
+                wg_raw = f.get('Nhóm làm việc')
+                work_group_link = wg_raw.get('link') if isinstance(wg_raw, dict) else extract_lark_text(wg_raw) # Handle text link too
+                
+                work_platform = extract_lark_text(f.get('Nền tảng làm việc'))
+                
+                # Source
+                source_subdata = extract_lark_text(f.get('Source'))
+                
+                # Assignees (Map names to User IDs)
+                # Helper to get name from list/dict
+                def get_person_name(field):
+                    if not field: return None
+                    if isinstance(field, list) and field: return field[0].get('name')
+                    if isinstance(field, dict): return field.get('name')
+                    return str(field)
+
+                lead_owner_name = get_person_name(f.get('Leads'))
+                sale_name = get_person_name(f.get('Sale phụ trách'))
+                cskh_name = get_person_name(f.get('CSKH Take Care'))
+
+                lead_owner_id = helper_find_user_by_name(lead_owner_name)
+                assigned_sale_id = helper_find_user_by_name(sale_name)
+                assigned_cskh_id = helper_find_user_by_name(cskh_name)
+                
+                main_assigned_to = assigned_sale_id or assigned_cskh_id or lead_owner_id
+
+                # Sector & Status
+                raw_service = extract_lark_text(f.get('Dịch vụ'))
+                sector = "Express"
+                if raw_service:
+                    s_str = str(raw_service).upper()
+                    if "POD" in s_str or "DROP" in s_str: sector = "Pod_Drop"
+                    elif "WAREHOUSE" in s_str: sector = "Warehouse"
+                
+                raw_status = extract_lark_text(f.get('Trình trạng đi đơn hiện tại')) or 'Khách Mới'
+                status = helper_normalize_status(raw_status)
+                
+                # Date Handling
+                updated_at = now_dt()
+                raw_date = f.get('Ngày')
+                if raw_date and isinstance(raw_date, int):
+                    try:
+                        updated_at = datetime.fromtimestamp(raw_date / 1000)
+                    except: pass
+
+                lead_doc = {
+                    "psid": item.get('record_id'),
+                    "cus_id": cus_id,
+                    "full_name": full_name,
+                    "phone_number": info, 
+                    "info": info,
+                    "work_group_link": work_group_link,
+                    "work_platform": work_platform,
+                    "source_platform": "Lark",
+                    "source_subdata": source_subdata,
+                    "lead_owner_id": lead_owner_id,
+                    "assigned_sale_id": assigned_sale_id,
+                    "assigned_cskh_id": assigned_cskh_id,
+                    # Store RAW names for fallback display
+                    "lark_owner_name": lead_owner_name,
+                    "lark_sale_name": sale_name,
+                    "lark_cskh_name": cskh_name,
+                    "assigned_to": main_assigned_to,
+                    "sector": sector,
+                    "status": status,
+                    "updated_at": updated_at,
+                    "page_id": "LARK_BASE"
+                }
+                
+                # Check for existing PSID to avoid Duplicate Key Error if we didn't clear correctly
+                # or if Sync logic overlaps
+                if db.leads.find_one({"psid": item.get('record_id')}):
+                    # Update instead of insert
+                    db.leads.update_one({"psid": item.get('record_id')}, {"$set": lead_doc})
+                else:
+                    db.leads.insert_one(lead_doc)
+                    
+                inserted_count += 1
+                
+                # 4. Handle Note (Extract text properly)
+                note_content = extract_lark_text(f.get('Note'))
+                if note_content:
+                    db.notes.update_one(
+                        {"customer_psid": item.get('record_id'), "content": note_content},
+                        {"$set": {
+                            "customer_psid": item.get('record_id'),
+                            "content": note_content,
+                            "created_at": now_dt(),
+                            "from_source": "Lark"
+                        }},
+                        upsert=True
+                    )
+            except Exception as inner_e:
+                print(f"⚠️ Error processing record {item.get('record_id')}: {inner_e}")
+                error_count += 1
+                continue
+
+        print(f"✅ Synced {inserted_count} leads from Lark Base. Errors: {error_count}")
+        LAST_SYNC_TIMESTAMP = time.time()
+        
+    except Exception as e:
+        print(f"❌ Lark Sync Error: {e}")
+        log_to_file(f"Lark Sync Error: {e}")
 
 def sync_lark_tasks_task():
     global LAST_SYNC_TIMESTAMP
@@ -995,21 +1191,60 @@ def update_telegram_self():
 @app.route('/sector/<name>')
 @login_required
 def view_sector(name):
-    q = {"sector": name}
-    if request.args.get('search'): q["full_name"] = {"$regex": request.args.get('search'), "$options": "i"}
-    if request.args.get('status'): q["status"] = request.args.get('status')
+    q_filter = {"sector": name}
     
-    if request.args.get('mode') == 'mine': # ✅ Only show leads assigned to current user
-        q["assigned_to"] = ObjectId(current_user.id)
+    # 1. Text Search (Name or Info/Phone)
+    search_query = request.args.get('q') or request.args.get('search')
+    if search_query:
+        # Regex search in full_name or info/phone_number
+        q_filter["$or"] = [
+            {"full_name": {"$regex": search_query, "$options": "i"}},
+            {"info": {"$regex": search_query, "$options": "i"}},
+            {"phone_number": {"$regex": search_query, "$options": "i"}} # Legacy support
+        ]
+
+    # 2. Status Filter
+    status = request.args.get('status')
+    if status:
+        q_filter["status"] = status
+
+    # 3. Source Filter
+    source = request.args.get('source')
+    if source:
+        q_filter["source_platform"] = source
+
+    # 4. Date Filter (updated_at)
+    date_str = request.args.get('date')
+    if date_str:
+        try:
+            # Parse YYYY-MM-DD
+            dt_start = datetime.strptime(date_str, "%Y-%m-%d")
+            dt_end = dt_start + timedelta(days=1)
+            q_filter["updated_at"] = {"$gte": dt_start, "$lt": dt_end}
+        except: pass
+
+    # 5. My Leads Mode
+    if request.args.get('mode') == 'mine':
+        q_filter["assigned_to"] = ObjectId(current_user.id)
         
-    leads = list(db.leads.find(q).sort("updated_at", -1))
+    leads = list(db.leads.find(q_filter).sort("updated_at", -1))
+    
     users_list = []
     if current_user.role == 'admin':
         users_list = list(db.users.find({}, {"username": 1, "_id": 1}))
 
     user_map = {u['_id']: u['username'] for u in db.users.find({}, {"username": 1, "_id": 1})}
     
-    return render_template('leads.html', sector_name=name, sector_id=name, leads=leads, user_map=user_map, users_list=users_list)
+    return render_template('leads.html', 
+                           sector_name=name, 
+                           sector_id=name, 
+                           leads=leads, 
+                           user_map=user_map, 
+                           users_list=users_list,
+                           search_query=search_query or '',
+                           status_filter=status,
+                           source_filter=source,
+                           date_filter=date_str)
 
 @app.route('/customer/assign/<psid>', methods=['POST'])
 @login_required
@@ -3250,6 +3485,19 @@ def download_template():
     df.loc[0] = ['YTYCPREG', 'US', '0.5']
     
     output = io.BytesIO()
+    
+    # ✅ DEBUG ROUTE: Force Lark Sync (For Verification)
+    @app.route('/debug/force-lark-sync')
+    @login_required 
+    def debug_force_lark_sync():
+        """Manually trigger Lark Sync for verification."""
+        if current_user.role not in [SUPERADMIN_ROLE, 'admin']:
+            return "Unauthorized", 403
+        try:
+            sync_lark_base_leads()
+            return jsonify({"status": "success", "message": "Lark Sync Completed Successfully."})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
     df.to_csv(output, index=False, encoding='utf-8-sig')
     output.seek(0)
     
@@ -3373,8 +3621,8 @@ if __name__ == '__main__':
     init_pancake_pages(True)
 
     if not scheduler.running:
-        scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', hours=24)  # ✅ Changed to daily
-        scheduler.add_job(id='l_leads', func=sync_all_lark_task, trigger='interval', hours=24)  # ✅ Changed to daily
+        scheduler.add_job(id='p_sync', func=pancake_sync_task, trigger='interval', hours=24)
+        scheduler.add_job(id='l_leads', func=sync_lark_base_leads, trigger='interval', hours=24)  # ✅ Changed to daily, calling new function
         # scheduler.add_job(id='l_tasks', func=sync_lark_tasks_task, trigger='interval', seconds=60)
         
         # ✅ Unified auto overdue scheduler

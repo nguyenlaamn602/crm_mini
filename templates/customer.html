@@ -92,11 +92,18 @@
                 <h6 class="text-uppercase text-muted small fw-bold mb-4">Customer Details</h6>
 
                 <div class="mb-4">
-                    <label class="text-muted small d-block mb-1">PHONE / USERNAME</label>
+                    <label class="text-muted small d-block mb-1">INFO / CONTACT</label>
                     <input type="text" class="inline-edit fw-bold text-primary p-0 fs-5" style="width: 100%;"
-                        value="{{ lead.phone_number if lead.phone_number != 'N/A' else '' }}"
-                        placeholder="Enter phone..." data-field="phone_number" onblur="autoSave(this)">
+                        value="{{ lead.info if lead.info and lead.info != 'N/A' else (lead.phone_number if lead.phone_number != 'N/A' else '') }}"
+                        placeholder="Enter phone/link..." data-field="info" onblur="autoSave(this)">
                 </div>
+
+                {% if lead.cus_id %}
+                <div class="mb-4">
+                    <label class="text-muted small d-block mb-1">CUS ID</label>
+                    <div class="fw-bold text-dark fs-5">{{ lead.cus_id }}</div>
+                </div>
+                {% endif %}
 
                 <div class="mb-4">
                     <label class="text-muted small d-block mb-1">SECTOR</label>
@@ -123,9 +130,9 @@
                     </select>
                 </div>
 
-                <!-- ✅ NEW: ASSIGNED STAFF FIELD -->
+                <!-- ✅ ASSIGNED STAFF FIELD -->
                 <div class="mb-4">
-                    <label class="text-muted small d-block mb-1">ASSIGNED STAFF</label>
+                    <label class="text-muted small d-block mb-1">ASSIGNED STAFF (MAIN)</label>
                     {% if current_user.role in ['admin', 'superadmin'] %}
                     <!-- Admin/Superadmin can change assignee -->
                     <select class="form-select border-0 bg-info bg-opacity-10 text-dark rounded-3 fw-bold"
@@ -174,9 +181,61 @@
                     {% endif %}
                 </div>
 
+                <!-- ✅ LARK ASSIGNMENTS DETAIL -->
+                {% if lead.source_platform == 'Lark' and (lead.assigned_sale_id or lead.assigned_cskh_id or
+                lead.lead_owner_id or lead.lark_sale_name or lead.lark_cskh_name or lead.lark_owner_name) %}
+                <div class="mb-3 p-3 bg-light rounded-3 small">
+                    <div class="fw-bold border-bottom pb-2 mb-2 text-muted">Lark Assignments</div>
+
+                    <!-- SALE -->
+                    {% if lead.assigned_sale_id or lead.lark_sale_name %}
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Sale:</span>
+                        <span class="fw-semibold">
+                            {% if lead.assigned_sale_id %}
+                            {% for u in users_list %}{% if u._id|string == lead.assigned_sale_id|string %}{{ u.username
+                            }}{% endif %}{% endfor %}
+                            {% else %}
+                            {{ lead.lark_sale_name }} (Unmapped)
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    <!-- CSKH -->
+                    {% if lead.assigned_cskh_id or lead.lark_cskh_name %}
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>CSKH:</span>
+                        <span class="fw-semibold">
+                            {% if lead.assigned_cskh_id %}
+                            {% for u in users_list %}{% if u._id|string == lead.assigned_cskh_id|string %}{{ u.username
+                            }}{% endif %}{% endfor %}
+                            {% else %}
+                            {{ lead.lark_cskh_name }} (Unmapped)
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    <!-- OWNER -->
+                    {% if lead.lead_owner_id or lead.lark_owner_name %}
+                    <div class="d-flex justify-content-between">
+                        <span>Owner:</span>
+                        <span class="fw-semibold">
+                            {% if lead.lead_owner_id %}
+                            {% for u in users_list %}{% if u._id|string == lead.lead_owner_id|string %}{{ u.username
+                            }}{% endif %}{% endfor %}
+                            {% else %}
+                            {{ lead.lark_owner_name }} (Unmapped)
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
                 {# =========================
-                ✅ SOURCE: Pancake link
-                Format: https://pancake.vn/{page_username}?c_id={conversation_id}
+                ✅ SOURCE: Pancake / Lark
                 ========================= #}
 
                 {% set is_pancake = (lead.source_platform and ('Pancake' in lead.source_platform)) %}
@@ -198,9 +257,15 @@
                         </span>
                     </a>
                     {% else %}
-                    <span class="badge bg-secondary-subtle text-secondary border px-2">
-                        {{ lead.source_platform }}
-                    </span>
+                    <div class="d-flex flex-column">
+                        <span class="badge bg-secondary-subtle text-secondary border px-2 w-auto"
+                            style="width: fit-content;">
+                            {{ lead.source_platform }}
+                        </span>
+                        {% if lead.source_subdata %}
+                        <small class="text-muted mt-1">{{ lead.source_subdata }}</small>
+                        {% endif %}
+                    </div>
                     {% endif %}
                 </div>
 
@@ -218,6 +283,19 @@
                     <a href="/sync-now" class="btn btn-outline-secondary rounded-pill py-2">
                         <i class="bi bi-arrow-repeat me-2"></i>Sync now (Pancake)
                     </a>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- ✅ LARK WORK GROUP BUTTON -->
+                {% if lead.work_group_link %}
+                <div class="d-grid mt-2">
+                    <a href="{{ lead.work_group_link }}" target="_blank"
+                        class="btn btn-primary rounded-pill fw-bold shadow-sm py-2">
+                        <i class="bi bi-microsoft-teams me-2"></i>Open Work Group
+                    </a>
+                    {% if lead.work_platform %}
+                    <div class="text-muted small mt-2 text-center">{{ lead.work_platform }}</div>
                     {% endif %}
                 </div>
                 {% endif %}

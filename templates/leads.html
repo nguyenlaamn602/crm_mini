@@ -46,37 +46,51 @@
             {% endif %}
         </div>
 
+        <!-- Consolidated Search & Filter Form -->
+        <!-- Consolidated Search & Filter Form -->
         <form action="/sector/{{ sector_id }}" method="GET" class="d-flex align-items-center gap-2">
-            <!-- Keep mode if exists -->
             {% if request.args.get('mode') %}
             <input type="hidden" name="mode" value="{{ request.args.get('mode') }}">
             {% endif %}
 
-            <div class="input-group input-group-sm rounded-3 overflow-hidden bg-light" style="width: 250px;">
-                <span class="input-group-text border-0 bg-transparent text-muted">
-                    <i class="bi bi-search"></i>
-                </span>
-                <input type="text" name="search" class="form-control border-0 bg-transparent"
-                    placeholder="Search customer name..." value="{{ request.args.get('search', '') }}">
+            <div class="d-flex gap-2">
+                <!-- Search -->
+                <input type="text" name="q" class="form-control rounded-pill px-4 border-0 shadow-sm"
+                    placeholder="Search name/info..." value="{{ search_query }}" style="min-width: 200px;">
+
+                <!-- Status Filter -->
+                <select name="status" class="form-select rounded-pill px-3 border-0 shadow-sm" style="width: auto;"
+                    onchange="this.form.submit()">
+                    <option value="">-- All Statuses --</option>
+                    <option value="Khách Mới" {% if status_filter=='Khách Mới' %}selected{% endif %}>New Customer
+                    </option>
+                    <option value="Khách hàng tiềm năng" {% if status_filter=='Khách hàng tiềm năng' %}selected{% endif
+                        %}>Potential</option>
+                    <option value="Khách Vip" {% if status_filter=='Khách Vip' %}selected{% endif %}>VIP</option>
+                    <option value="Khách không đi" {% if status_filter=='Khách không đi' %}selected{% endif %}>No-show
+                    </option>
+                </select>
+
+                <!-- Source Filter -->
+                <select name="source" class="form-select rounded-pill px-3 border-0 shadow-sm" style="width: auto;"
+                    onchange="this.form.submit()">
+                    <option value="">-- All Sources --</option>
+                    <option value="Lark" {% if source_filter=='Lark' %}selected{% endif %}>Lark Base</option>
+                    <option value="Pancake" {% if source_filter=='Pancake' %}selected{% endif %}>Pancake</option>
+                    <option value="Excel" {% if source_filter=='Excel' %}selected{% endif %}>Excel Import</option>
+                    <option value="Ads" {% if source_filter=='Ads' %}selected{% endif %}>Ads</option>
+                </select>
+
+                <!-- Date Filter -->
+                <input type="date" name="date" class="form-control rounded-pill px-3 border-0 shadow-sm"
+                    style="width: auto;" value="{{ date_filter }}" onchange="this.form.submit()">
             </div>
 
-            <select name="status" class="form-select form-select-sm border-0 bg-light rounded-3" style="width: 180px;"
-                onchange="this.form.submit()">
-                <option value="">-- All Statuses --</option>
-                <option value="Khách Mới" {% if request.args.get('status')=='Khách Mới' %}selected{% endif %}>New
-                    Customer</option>
-                <option value="Khách hàng tiềm năng" {% if request.args.get('status')=='Khách hàng tiềm năng'
-                    %}selected{% endif %}>Potential</option>
-                <option value="Khách Vip" {% if request.args.get('status')=='Khách Vip' %}selected{% endif %}>VIP
-                </option>
-                <option value="Khách không đi" {% if request.args.get('status')=='Khách không đi' %}selected{% endif %}>
-                    No-show</option>
-            </select>
-
-            {% if request.args.get('search') or request.args.get('status') %}
+            {% if request.args.get('q') or request.args.get('status') or request.args.get('source') or
+            request.args.get('date') %}
             <a href="/sector/{{ sector_id }}{% if request.args.get('mode') %}?mode={{request.args.get('mode')}}{% endif %}"
                 class="btn btn-sm btn-link text-secondary text-decoration-none">
-                Clear Filters
+                Clear
             </a>
             {% endif %}
         </form>
@@ -87,10 +101,11 @@
         <table class="table align-middle mb-0 table-hover leads-table">
             <thead class="bg-light text-secondary">
                 <tr>
-                    <th class="ps-4 py-3">CUSTOMER</th>
+                    <th class="ps-4 py-3" style="width: 100px;">CUS ID</th>
+                    <th>CUSTOMER</th>
                     <th>ASSIGNEE</th>
                     <th>SOURCE</th>
-                    <th>PHONE NUMBER</th>
+                    <th>INFO</th>
                     <th class="text-center">STATUS</th>
                     <th class="pe-4 text-end">UPDATED</th>
                     <th class="pe-4 text-end">ACTIONS</th>
@@ -99,83 +114,117 @@
             <tbody>
                 {% for lead in leads %}
                 <tr>
+                    <!-- ✅ CUS ID -->
                     <td class="ps-4">
+                        {% if lead.cus_id %}
+                        <span class="badge bg-light text-secondary border fw-normal">
+                            {{ lead.cus_id }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted small">-</span>
+                        {% endif %}
+                    </td>
+
+                    <td>
                         <a href="/customer/{{ lead.psid }}" class="text-decoration-none">
                             <div class="fw-bold text-dark lead-name">
                                 {{ lead.full_name }}
                             </div>
                         </a>
+                        <!-- Removed CUS ID from here -->
                         <small class="text-muted lead-id" style="font-size: 0.7rem;">
                             ID: {{ lead.psid }}
                         </small>
                     </td>
 
-                    <!-- ✅ NEW: ASSIGNEE COLUMN & SELF-CLAIM/UNCLAIM LOGIC -->
+                    <!-- ✅ ASSIGNEE WITH FALLBACK -->
                     <td>
-                        {% if lead.assigned_to %}
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="badge bg-info-subtle text-info border border-info-subtle px-2 rounded-pill">
-                                <i class="bi bi-person-fill me-1"></i>
-                                {{ user_map[lead.assigned_to] if lead.assigned_to in user_map else 'Unknown' }}
+                        {% if lead.assigned_sale_id or lead.lark_sale_name %}
+                        <div class="small">
+                            <span class="text-muted">Sale:</span>
+                            <span class="fw-semibold text-dark">
+                                {% set found_sale = false %}
+                                {% for u in users_list %}{% if u._id|string == lead.assigned_sale_id|string %}{{
+                                u.username }}{% set found_sale = true %}{% endif %}{% endfor %}
+                                {% if not found_sale %}{{ lead.lark_sale_name or 'Unmapped' }}{% endif %}
                             </span>
-
-                            <!-- ✅ FIX: Thêm điều kiện Admin/Superadmin cũng được phép hủy -->
-                            {% if lead.assigned_to|string == current_user.id|string or current_user.role in ['admin',
-                            'superadmin'] %}
-                            <form action="/customer/assign/{{ lead.psid }}" method="POST"
-                                onsubmit="return confirm('Unassign this lead?');">
-                                <!-- Send empty assigned_user_id to trigger unassign logic -->
-                                <input type="hidden" name="assigned_user_id" value="">
-                                <button type="submit" class="btn btn-link text-danger p-0 ms-1" title="Unassign">
-                                    <i class="bi bi-x-circle"></i>
-                                </button>
-                            </form>
-                            {% endif %}
                         </div>
-                        {% else %}
-                        <!-- Logic: User can self-claim leads -->
-                        <form action="/customer/assign/{{ lead.psid }}" method="POST">
-                            <input type="hidden" name="assigned_user_id" value="{{ current_user.id }}">
-                            <button type="submit"
-                                class="btn btn-sm btn-outline-primary rounded-pill px-3 py-0 fw-bold shadow-sm"
-                                style="font-size: 0.75rem;">
-                                Claim
-                            </button>
-                        </form>
+                        {% endif %}
+
+                        {% if lead.assigned_cskh_id or lead.lark_cskh_name %}
+                        <div class="small">
+                            <span class="text-muted">CSKH:</span>
+                            <span class="fw-semibold text-dark">
+                                {% set found_cskh = false %}
+                                {% for u in users_list %}{% if u._id|string == lead.assigned_cskh_id|string %}{{
+                                u.username }}{% set found_cskh = true %}{% endif %}{% endfor %}
+                                {% if not found_cskh %}{{ lead.lark_cskh_name or 'Unmapped' }}{% endif %}
+                            </span>
+                        </div>
+                        {% endif %}
+
+                        {% if not lead.assigned_to and not lead.lark_owner_name %}
+                        <button class="btn btn-sm btn-outline-primary rounded-pill py-0 px-2 mt-1"
+                            style="font-size: 0.7rem;" onclick="claimLead('{{ lead.psid }}')">
+                            Claim
+                        </button>
                         {% endif %}
                     </td>
 
+                    <!-- ✅ SOURCE -->
                     <td>
-                        {% if lead.source_platform == 'Lark' %}
-                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2">Lark
-                            Base</span>
-                        {% elif lead.source_platform == 'Pancake' %}
                         <span
-                            class="badge bg-primary-subtle text-primary border border-primary-subtle px-2">Pancake.ai</span>
-                        {% else %}
-                        <span
-                            class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2">Manual</span>
-                        {% endif %}
-                    </td>
-
-                    <!-- PHONE NUMBER: GIỮ NGUYÊN LOGIC -->
-                    <td>
-                        <span class="badge bg-light text-dark border px-2 py-2 fw-normal">
-                            {{ lead.phone_number if lead.phone_number != 'N/A' else 'None' }}
+                            class="badge {% if lead.source_platform == 'Lark' %}bg-success-subtle text-success{% else %}bg-secondary-subtle text-secondary{% endif %} rounded-pill fw-normal border">
+                            {{ lead.source_platform or 'Lead công ty' }}
                         </span>
+                        {% if lead.source_subdata %}
+                        <div class="text-muted small mt-1" style="font-size: 0.7rem;">{{ lead.source_subdata }}</div>
+                        {% endif %}
+                    </td>
+
+                    <!-- INFO -->
+                    <td>
+                        {% if lead.info and lead.info != 'N/A' %}
+                        {% if 'http' in lead.info or 't.me' in lead.info or 'facebook.com' in lead.info %}
+                        <a href="{{ lead.info }}" target="_blank"
+                            class="btn btn-sm btn-light border px-2 py-1 text-truncate" style="max-width: 150px;">
+                            <i class="bi bi-link-45deg me-1"></i>Link/Contact
+                        </a>
+                        {% else %}
+                        <span class="badge bg-light text-dark border px-2 py-2 fw-normal text-truncate"
+                            style="max-width: 150px; display: block;">
+                            {{ lead.info }}
+                        </span>
+                        {% endif %}
+                        {% else %}
+                        <span class="text-muted small">-</span>
+                        {% endif %}
                     </td>
 
                     <td class="text-center">
-                        <span class="badge bg-warning text-dark px-3 py-2 rounded-pill badge-status">
+                        {% set s_color = 'secondary' %}
+                        {% if lead.status == 'Khách Mới' %}{% set s_color = 'warning' %}
+                        {% elif lead.status == 'Khách hàng tiềm năng' %}{% set s_color = 'info' %}
+                        {% elif lead.status == 'Khách Vip' %}{% set s_color = 'success' %}
+                        {% elif lead.status == 'Khách không đi' %}{% set s_color = 'secondary' %}
+                        {% endif %}
+                        <span class="badge bg-{{ s_color }} rounded-pill badge-status">
                             {{ lead.status }}
                         </span>
                     </td>
 
                     <td class="pe-4 text-end text-muted small">
-                        {{ lead.updated_at.strftime('%d/%m') }}
+                        {{ lead.updated_at.strftime('%Y/%m/%d') }}
                     </td>
 
                     <td class="pe-4 text-end">
+                        {% if lead.work_group_link %}
+                        <a href="{{ lead.work_group_link }}" target="_blank" class="btn btn-link text-success p-0 me-2"
+                            title="Open Work Group">
+                            <i class="bi bi-microsoft-teams fs-5"></i>
+                        </a>
+                        {% endif %}
+
                         <a href="/customer/{{ lead.psid }}" class="btn btn-link text-primary p-0 me-2">
                             <i class="bi bi-pencil-square fs-5"></i>
                         </a>
